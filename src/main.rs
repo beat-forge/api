@@ -27,7 +27,7 @@ async fn main() {
             .service(routes::users::create_user)
             .service(routes::mods::get_mods_by_game_semver)
     })
-    .bind("127.0.0.1:8080") // love u
+    .bind("127.0.0.1:8080")
     .unwrap()
     .run()
     .await
