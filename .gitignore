@@ -16,5 +16,8 @@ Cargo.lock
 # Environment variable overrides
 .env
 
+# Secret key
+secret.key
+
 # Added by cargo
 /target
