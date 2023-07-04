@@ -14,7 +14,10 @@ chrono = { version = "0.4.26", features = ["serde"] }
 dotenv = "0.15.0"
 forge-lib = { git = "https://github.com/beat-forge/lib", version = "0.1.0" }
 futures = "0.3.28"
+jsonwebtoken = "8.3.0"
 mongodb = { version = "2.6.0", features = ["bson-chrono-0_4"] }
+oauth2 = "4.4.1"
+rand = "0.8.5"
 reqwest = { version = "0.11.18", features = ["json", "rustls"] }
 semver = { version = "1.0.17", features = ["serde"] }
 serde = { version = "1.0.164", features = ["derive"] }

@@ -1,9 +1,14 @@
-use crate::AppState;
-use actix_web::{post, web, HttpResponse, Responder};
-use argon2::{password_hash::rand_core::OsRng, password_hash::SaltString, Argon2, PasswordHasher};
+use crate::{
+    structs::{GithubAccessToken, GithubUser, JWTAuth},
+    utils::get_bearer_auth,
+    AppState,
+};
+use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
 use bitflags::bitflags;
 use chrono::{DateTime, Utc};
-use mongodb::bson::{doc, Uuid, oid::ObjectId};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use mongodb::bson::{doc, oid::ObjectId, Uuid};
+use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -22,8 +27,9 @@ pub struct User {
     pub id: Option<ObjectId>,
 
     // basic info
+    pub github_id: i64,
     pub username: String,
-    pub password: String,
+    pub email: String,
 
     // public info
     pub display_name: Option<String>,
@@ -31,7 +37,7 @@ pub struct User {
 
     // system info
     pub permissions: i32, // bitflags
-    pub api_key: String,    // uuid
+    pub api_key: String,  // uuid
 
     #[serde(with = "chrono::serde::ts_seconds")]
     pub created_at: DateTime<Utc>,
@@ -40,55 +46,165 @@ pub struct User {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct CreateUserRequest {
-    pub username: String,
-    pub password: String, // todo, recieve already hashed password
+pub struct AuthUserRequest {
+    pub code: String, // github oauth code
 }
 
-#[post("/users")]
-pub async fn create_user(
+#[post("/user/auth")]
+pub async fn auth_user(
     data: web::Data<AppState>,
-    body: web::Json<CreateUserRequest>,
+    req: web::Query<AuthUserRequest>,
 ) -> impl Responder {
-    let collection = data.db.collection::<User>("users");
+    let client = HttpClient::builder()
+        .user_agent("forge-registry")
+        .build()
+        .unwrap();
 
-    let user = collection
-        .find_one(doc! {"username": &body.username}, None)
+    let request = client
+        .post("https://github.com/login/oauth/access_token")
+        .header("Accept", "application/json")
+        .json(&json!({
+            "client_id": std::env::var("GITHUB_CLIENT_ID").unwrap(),
+            "client_secret": std::env::var("GITHUB_CLIENT_SECRET").unwrap(),
+            "code": req.code,
+        }))
+        .send()
         .await
         .unwrap();
-    if user.is_some() {
-        return HttpResponse::Conflict().json(json!({"error": "Username already taken"}));
+
+    let response = request.json::<GithubAccessToken>().await;
+    if response.is_err() {
+        return HttpResponse::BadRequest().json(json!({
+            "error": "invalid code"
+        }));
     }
 
-    let salt = SaltString::generate(&mut OsRng);
-    let argon2 = Argon2::default();
+    let access_token = response.unwrap().access_token;
 
-    let hash = argon2
-        .hash_password(body.password.as_bytes(), &salt)
+    let github_user = client
+        .get("https://api.github.com/user")
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .unwrap()
+        .json::<GithubUser>()
+        .await
         .unwrap();
 
-    let user = User {
-        id: None,
-
-        username: body.username.clone(),
-        password: hash.to_string(),
-
-        display_name: None,
-        avatar: None,
-
-        permissions: Permissions::USER.bits(),
-        api_key: Uuid::new().to_string(),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+    let collection = data.db.collection::<User>("users");
+    let db_user = match collection
+        .find_one(doc! {"github_id":github_user.id}, None)
+        .await
+    {
+        Ok(user) => user,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(json!({
+                "error": e.to_string()
+            }))
+        }
     };
 
-    let res = match collection.insert_one(&user, None).await {
-        Ok(res) => res,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    if db_user.is_none() {
+        let new_user = match collection
+            .insert_one(
+                User {
+                    id: None,
+                    github_id: github_user.id,
+                    username: github_user.login,
+                    email: github_user.email,
+                    display_name: None,
+                    avatar: None,
+                    permissions: Permissions::USER.bits(),
+                    api_key: Uuid::new().to_string(),
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                },
+                None,
+            )
+            .await
+        {
+            Ok(user) => user,
+            Err(err) => {
+                return HttpResponse::InternalServerError().json(json!({
+                    "error": err.to_string()
+                }))
+            }
+        };
+
+        let token = encode(
+            &Header::default(),
+            &JWTAuth::new(new_user.inserted_id.as_object_id().unwrap()),
+            &EncodingKey::from_secret(&data.key),
+        )
+        .unwrap();
+
+        return HttpResponse::Ok().json(json!({
+            "token": token,
+        }));
     };
+
+    let user = db_user.unwrap();
+
+    let token = encode(
+        &Header::default(),
+        &JWTAuth::new(user.id.unwrap()),
+        &EncodingKey::from_secret(&data.key),
+    )
+    .unwrap();
 
     HttpResponse::Ok().json(json!({
-        "user_id": res.inserted_id,
+        "token": token,
+    }))
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GetUserApiKeyRequest {
+    pub jwt: String,
+}
+
+#[get("/user/api_key")]
+pub async fn get_user_api_key(req: HttpRequest, data: web::Data<AppState>) -> impl Responder {
+    let token = get_bearer_auth(&req);
+
+    if token.is_none() {
+        return HttpResponse::Unauthorized().json(json!({
+            "error": "missing token"
+        }));
+    }
+
+    let jwt = decode::<JWTAuth>(
+        &token.unwrap(),
+        &DecodingKey::from_secret(&data.key),
+        &Validation::new(Algorithm::HS256),
+    );
+
+    if jwt.is_err() {
+        return HttpResponse::Unauthorized().json(json!({
+            "error": "bad token"
+        }));
+    }
+
+    let jwt = jwt.unwrap().claims;
+
+    let collection = data.db.collection::<User>("users");
+    let user = match collection.find_one(doc! {"_id": jwt.uid}, None).await {
+        Ok(user) => user,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(json!({
+                "error": e.to_string()
+            }))
+        }
+    };
+
+    if user.is_none() {
+        return HttpResponse::Unauthorized().json(json!({
+            "error": "bad token"
+        }));
+    }
+
+    let user = user.unwrap();
+
+    HttpResponse::Ok().json(json!({
         "api_key": user.api_key,
     }))
 }

@@ -134,9 +134,9 @@ pub async fn create_mod(
             Err(e) => return Err(actix_web::error::ErrorInternalServerError(e)),
         };
 
-        return Ok(HttpResponse::Ok().json(json!({
+        Ok(HttpResponse::Ok().json(json!({
             "mod_id": res.upserted_id
-        })));
+        })))
     } else {
         // Create a new mod
         let r#mod = DBMod {
@@ -155,9 +155,9 @@ pub async fn create_mod(
             Err(e) => return Err(actix_web::error::ErrorInternalServerError(e)),
         };
 
-        return Ok(HttpResponse::Ok().json(json!({
+        Ok(HttpResponse::Ok().json(json!({
             "mod_id": res.inserted_id
-        })));
+        })))
     }
 }
 
