@@ -4,13 +4,18 @@ mod utils;
 
 use std::path::Path;
 
-use actix_web::{web, App, HttpServer};
+use actix_web::{web, App, HttpServer, Responder, HttpResponse, get};
 use mongodb::{options::ClientOptions, Client as MongoClient, Database};
 use rand::Rng;
 
 pub struct AppState {
     pub db: Database,
     pub key: Vec<u8>,
+}
+
+#[get("/")]
+pub async fn index() -> impl Responder {
+    HttpResponse::Ok().body("Hello world!")
 }
 
 #[tokio::main]
@@ -39,11 +44,12 @@ async fn main() {
                 db: db.clone(),
                 key: std::fs::read("./secret.key").unwrap(),
             }))
+            .service(index)
             .service(routes::mods::categorys)
+            .service(routes::mods::get_mods)
             .service(routes::mods::create_mod)
             .service(routes::users::auth_user)
             .service(routes::users::get_user_api_key)
-            .service(routes::mods::get_mods_by_game_semver)
     })
     .bind("127.0.0.1:8080")
     .unwrap()

@@ -1,49 +1,19 @@
-use crate::{
-    structs::{GithubAccessToken, GithubUser, JWTAuth},
-    utils::get_bearer_auth,
-    AppState,
-};
 use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
-use bitflags::bitflags;
-use chrono::{DateTime, Utc};
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
-use mongodb::bson::{doc, oid::ObjectId, Uuid};
-use reqwest::Client as HttpClient;
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use mongodb::bson::doc;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-bitflags! {
-    pub struct Permissions: i32 {
-        const USER = 1 << 0; // can download, upload, and request verification for mods.
-        const MODERATOR = 1 << 1; // can verify mods, and delete mods not uploaded by them.
-        const ADMIN = 1 << 2; // full control over the site.
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct User {
-    #[serde(rename = "_id")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<ObjectId>,
-
-    // basic info
-    pub github_id: i64,
-    pub username: String,
-    pub email: String,
-
-    // public info
-    pub display_name: Option<String>,
-    pub avatar: Option<String>,
-
-    // system info
-    pub permissions: i32, // bitflags
-    pub api_key: String,  // uuid
-
-    #[serde(with = "chrono::serde::ts_seconds")]
-    pub created_at: DateTime<Utc>,
-    #[serde(with = "chrono::serde::ts_seconds")]
-    pub updated_at: DateTime<Utc>,
-}
+use crate::{
+    structs::{
+        auth::JWTAuth,
+        github::{self, GithubAccessToken, GithubUser},
+        users::User,
+    },
+    utils::get_bearer_auth,
+    AppState,
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct AuthUserRequest {
@@ -55,7 +25,7 @@ pub async fn auth_user(
     data: web::Data<AppState>,
     req: web::Query<AuthUserRequest>,
 ) -> impl Responder {
-    let client = HttpClient::builder()
+    let client = Client::builder()
         .user_agent("forge-registry")
         .build()
         .unwrap();
@@ -105,28 +75,11 @@ pub async fn auth_user(
     };
 
     if db_user.is_none() {
-        let new_user = match collection
-            .insert_one(
-                User {
-                    id: None,
-                    github_id: github_user.id,
-                    username: github_user.login,
-                    email: github_user.email,
-                    display_name: None,
-                    avatar: None,
-                    permissions: Permissions::USER.bits(),
-                    api_key: Uuid::new().to_string(),
-                    created_at: Utc::now(),
-                    updated_at: Utc::now(),
-                },
-                None,
-            )
-            .await
-        {
+        let new_user = match collection.insert_one(User::from(github_user), None).await {
             Ok(user) => user,
-            Err(err) => {
+            Err(e) => {
                 return HttpResponse::InternalServerError().json(json!({
-                    "error": err.to_string()
+                    "error": e.to_string()
                 }))
             }
         };
@@ -193,7 +146,7 @@ pub async fn get_user_api_key(req: HttpRequest, data: web::Data<AppState>) -> im
     let jwt = decode::<JWTAuth>(
         &token.unwrap(),
         &DecodingKey::from_secret(&data.key),
-        &Validation::new(Algorithm::HS256),
+        &Validation::new(jsonwebtoken::Algorithm::HS256),
     );
 
     if jwt.is_err() {
