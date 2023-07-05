@@ -20,7 +20,7 @@ bitflags! {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct User {
     #[serde(rename = "_id")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -131,9 +131,27 @@ pub async fn auth_user(
             }
         };
 
+        let user = match collection
+            .find_one(doc! {"_id": new_user.inserted_id}, None)
+            .await
+        {
+            Ok(user) => user,
+            Err(e) => {
+                return HttpResponse::InternalServerError().json(json!({
+                    "error": e.to_string()
+                }))
+            }
+        };
+
+        if user.is_none() {
+            return HttpResponse::InternalServerError().json(json!({
+                "error": "failed to find user"
+            }));
+        }
+
         let token = encode(
             &Header::default(),
-            &JWTAuth::new(new_user.inserted_id.as_object_id().unwrap()),
+            &JWTAuth::new(user.unwrap()),
             &EncodingKey::from_secret(&data.key),
         )
         .unwrap();
@@ -147,7 +165,7 @@ pub async fn auth_user(
 
     let token = encode(
         &Header::default(),
-        &JWTAuth::new(user.id.unwrap()),
+        &JWTAuth::new(user),
         &EncodingKey::from_secret(&data.key),
     )
     .unwrap();
@@ -187,7 +205,7 @@ pub async fn get_user_api_key(req: HttpRequest, data: web::Data<AppState>) -> im
     let jwt = jwt.unwrap().claims;
 
     let collection = data.db.collection::<User>("users");
-    let user = match collection.find_one(doc! {"_id": jwt.uid}, None).await {
+    let user = match collection.find_one(doc! {"_id": jwt.user.id}, None).await {
         Ok(user) => user,
         Err(e) => {
             return HttpResponse::InternalServerError().json(json!({

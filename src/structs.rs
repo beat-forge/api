@@ -1,8 +1,10 @@
 use chrono::DateTime;
 use chrono::Utc;
-use mongodb::bson::oid::ObjectId;
+
 use serde::Deserialize;
 use serde::Serialize;
+
+use crate::routes::users::User;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GithubAccessToken {
@@ -67,7 +69,7 @@ pub struct Plan {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JWTAuth {
-    pub uid: ObjectId,
+    pub user: User,
     #[serde(with = "chrono::serde::ts_seconds")]
     exp: DateTime<Utc>, // Required (validate_exp defaults to true in validation). Expiration time (as UTC timestamp)
     #[serde(with = "chrono::serde::ts_seconds")]
@@ -75,11 +77,11 @@ pub struct JWTAuth {
 }
 
 impl JWTAuth {
-    pub fn new(uid: ObjectId) -> Self {
+    pub fn new(user: User) -> Self {
         let now = Utc::now();
 
         Self {
-            uid,
+            user,
             exp: now + chrono::Duration::days(1),
             iat: now,
         }
