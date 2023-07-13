@@ -28,7 +28,7 @@ impl Permission {
     }
 
     pub fn has_bits(&self, bits: i32) -> bool {
-        self.bits() & bits == bits
+        self.bits() & bits == self.bits()
     }
 }
 
@@ -52,6 +52,8 @@ pub struct User {
     // public info
     pub display_name: Option<String>,
     pub avatar: Option<String>,
+    pub bio: Option<String>,
+    pub mods: Vec<ObjectId>,
 
     // system info
     pub permissions: i32, // bitflags
@@ -76,8 +78,10 @@ impl From<GithubUser> for User {
             email: user.email,
             display_name: Some(user.login),
             avatar: Some(user.avatar_url),
+            bio: None,
             permissions,
             api_key,
+            mods: vec![],
             created_at: now,
             updated_at: now,
         }

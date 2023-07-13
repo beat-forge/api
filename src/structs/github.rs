@@ -29,7 +29,7 @@ pub struct GithubUser {
     pub hireable: bool,
     pub html_url: String,
     pub id: i64,
-    pub location: String,
+    pub location: Option<String>,
     pub login: String,
     pub name: Option<String>,
     pub node_id: String,

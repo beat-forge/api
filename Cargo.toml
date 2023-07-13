@@ -6,12 +6,15 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+actix-cors = "0.6.4"
 actix-web = { version = "4.3.1", features = ["rustls"] }
 argon2 = "0.5.0"
 bitflags = "2.3.3"
 bytes = "1.4.0"
+cached = { version = "0.44.0", features = ["serde"] }
 chrono = { version = "0.4.26", features = ["serde"] }
 dotenv = "0.15.0"
+env_logger = "0.10.0"
 forge-lib = { git = "https://github.com/beat-forge/lib", version = "0.1.0" }
 futures = "0.3.28"
 jsonwebtoken = "8.3.0"
