@@ -3,14 +3,13 @@ pub mod structs;
 mod utils;
 
 use std::path::Path;
-
 use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
+use sea_orm::{Database, DatabaseConnection, EntityTrait, FromQueryResult};
 use actix_cors::Cors;
-use mongodb::{options::ClientOptions, Client as MongoClient, Database};
 use rand::Rng;
 
 pub struct AppState {
-    pub db: Database,
+    pub db: DatabaseConnection,
     pub key: Vec<u8>,
 }
 
@@ -19,17 +18,12 @@ pub async fn index() -> impl Responder {
     HttpResponse::Ok().body("Hello world!")
 }
 
-#[tokio::main]
+#[actix_web::main]
 async fn main() {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
     dotenv::dotenv().ok();
 
-    let client_options = ClientOptions::parse(std::env::var("MONGO_URI").unwrap().as_str())
-        .await
-        .unwrap();
-
-    let mongo_client = MongoClient::with_options(client_options).unwrap();
-    let db = mongo_client.database(std::env::var("MONGO_DB").unwrap().as_str());
+    let db = Database::connect(std::env::var("POSTGRES_URL").unwrap()).await.unwrap();
 
     if !Path::new("./secret.key").exists() {
         let mut rng = rand::thread_rng();
@@ -49,12 +43,12 @@ async fn main() {
                 key: std::fs::read("./secret.key").unwrap(),
             }))
             .service(index)
-            .service(routes::mods::get_mod)
-            .service(routes::mods::get_mods)
-            .service(routes::mods::create_mod)
-            .service(routes::mods::categorys)
+            // .service(routes::mods::get_mod)
+            // .service(routes::mods::get_mods)
+            // .service(routes::mods::create_mod)
+            // .service(routes::mods::categorys)
             .service(routes::users::get_user)
-            .service(routes::users::auth_user)
+            // .service(routes::users::auth_user)
     })
     .bind("127.0.0.1:8080")
     .unwrap()
