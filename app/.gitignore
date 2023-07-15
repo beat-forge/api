@@ -20,4 +20,4 @@ Cargo.lock
 secret.key
 
 # Added by cargo
-/target
+target/
