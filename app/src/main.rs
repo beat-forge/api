@@ -42,7 +42,6 @@ async fn main() {
         println!("Generated secret key (first run)");
     }
 
-    println!("Running server at http://127.0.0.1:8080");
     HttpServer::new(move || {
         App::new()
             .wrap(Cors::permissive())
@@ -54,14 +53,14 @@ async fn main() {
             }))
             .service(index)
             // .service(routes::mods::get_mod)
-            // .service(routes::mods::get_mods)
-            // .service(routes::mods::create_mod)
-            // .service(routes::mods::categorys)
+            .service(routes::mods::get_mods)
+            .service(routes::mods::create_mod)
+            .service(routes::mods::get_categories)
             .service(routes::users::get_user)
             .service(routes::users::get_user_full)
             .service(routes::users::auth_user)
     })
-    .bind("127.0.0.1:8080")
+    .bind("0.0.0.0:8080")
     .unwrap()
     .run()
     .await

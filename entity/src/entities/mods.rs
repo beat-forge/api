@@ -11,18 +11,18 @@ pub struct Model {
     pub id: Uuid,
     #[sea_orm(column_type = "Text", unique)]
     pub slug: String,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub name: Option<String>,
+    #[sea_orm(column_type = "Text")]
+    pub name: String,
     #[sea_orm(column_type = "Text", nullable)]
     pub description: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub icon: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub cover: Option<String>,
-    pub author: Option<Uuid>,
-    pub category: Option<Uuid>,
+    pub author: Uuid,
+    pub category: Uuid,
     #[sea_orm(unique)]
-    pub stats: Option<Uuid>,
+    pub stats: Uuid,
     pub created_at: DateTime,
     pub updated_at: DateTime,
 }

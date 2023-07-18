@@ -1,6 +1,10 @@
-use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
-use entity::{beat_saber_versions, categories, mod_versions, mods, versions};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationDef};
+use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
+use chrono::Utc;
+use entity::{beat_saber_versions, categories, mod_stats, mod_versions, mods, users, versions, users_mods, version_beat_saber_versions, version_stats};
+use forge_lib::structs::forgemod::ForgeMod;
+use futures::StreamExt;
+use rayon::prelude::*;
+use sea_orm::{ActiveValue, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationDef};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -65,29 +69,275 @@ pub async fn get_mods(
     let mods = mods_query_base.all(&data.db).await.unwrap();
 
     let mod_versions = mod_versions::Entity::find().all(&data.db).await.unwrap();
+    let mod_stats = mod_stats::Entity::find().all(&data.db).await.unwrap();
+
     let versions = versions::Entity::find().all(&data.db).await.unwrap();
 
     let mut found_mods = vec![];
-    for m in mods {
+
+    mods.into_iter().for_each(|m| {
         let mut found = false;
-        for mv in mod_versions.iter().filter(|mv| mv.mod_id == m.id) {
-            for v in versions.iter().filter(|v| v.id == mv.version_id) {
-                if looking_version.matches(&Version::parse(&v.version).unwrap()) {
-                    found = true;
-                    break;
+
+        mod_versions
+            .iter()
+            .filter(|mv| mv.mod_id == m.id)
+            .into_iter()
+            .for_each(|mv| {
+                versions
+                    .iter()
+                    .filter(|v| v.id == mv.version_id)
+                    .into_iter()
+                    .for_each(|v| {
+                        if looking_version.matches(&Version::parse(&v.version).unwrap()) {
+                            found = true;
+                            return;
+                        }
+                    });
+
+                if found {
+                    return;
                 }
-            }
-            if found {
-                break;
-            }
-        }
+            });
+
         if found {
             found_mods.push(m); // I am for loop jesus - checksum 2023
         }
+    });
+
+    if query.sort_by.is_some() {
+        match query.sort_by.as_ref().unwrap().as_str() {
+            "name" => found_mods.sort_by(|a, b| a.name.cmp(&b.name)),
+            "downloads" => found_mods.sort_by(|a, b| {
+                mod_stats
+                    .iter()
+                    .filter(|ms| ms.id == a.id)
+                    .next()
+                    .unwrap()
+                    .downloads
+                    .cmp(
+                        &mod_stats
+                            .iter()
+                            .filter(|ms| ms.id == b.id)
+                            .next()
+                            .unwrap()
+                            .downloads,
+                    )
+            }),
+            "updated" => found_mods.sort_by(|a, b| b.updated_at.cmp(&a.updated_at)),
+            "created" => found_mods.sort_by(|a, b| b.created_at.cmp(&a.created_at)),
+            _ => (),
+        }
     }
+
+    let found_mods = found_mods
+        .into_iter()
+        .skip(offset as usize)
+        .take(limit as usize)
+        .collect::<Vec<mods::Model>>();
 
     HttpResponse::Ok().json(json!({ "mods": found_mods }))
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct UploadModRequest {
+    api_key: String,
+}
+
+/*
+    CLI -> Authenticate (get api key from website   )
+    CLI -> Upload Mod (send mod to website us) POST: "/mods"
+        * Payload
+        * Query
+*/
+#[post("/mods")]
+pub async fn create_mod(
+    req: HttpRequest,
+    data: web::Data<AppState>,
+    query: web::Query<UploadModRequest>,
+    mut forge_mod: web::Payload,
+) -> impl Responder {
+    let token = query.api_key.clone();
+
+    if token.is_empty() {
+        return HttpResponse::Unauthorized().json(json!({
+            "error": "Missing api token."
+        }));
+    }
+
+    let user = users::Entity::find()
+        .filter(users::Column::ApiKey.eq(token))
+        .one(&data.db)
+        .await
+        .unwrap();
+
+    if user.is_none() {
+        return HttpResponse::Unauthorized().json(json!({
+            "error": "Invalid api token."
+        }));
+    }
+
+    let user = user.unwrap();
+
+    // todo: check if user has permission to upload mods
+
+    let mut bytes = vec![]; // todo: use a stream for rayon support; this is a bottleneck
+    while let Some(item) = forge_mod.next().await {
+        bytes.extend_from_slice(&item.unwrap());
+    }
+
+    let forge_mod = match ForgeMod::try_from(bytes.as_slice()) {
+        Ok(forge_mod) => forge_mod,
+        Err(_) => {
+            return HttpResponse::BadRequest().json(json!({
+                "error": "The file you uploaded is not a valid ForgeMod."
+            }))
+        }
+    };
+
+    let mod_category = categories::Entity::find()
+        .filter(categories::Column::Name.eq(forge_mod.manifest.category.to_string()))
+        .one(&data.db)
+        .await
+        .unwrap();
+
+    if mod_category.is_none() {
+        return HttpResponse::BadRequest().json(json!({
+            "error": "The mod category you specified does not exist."
+        }));
+    }
+
+    let mod_category = mod_category.unwrap();
+
+    let matching_versions = beat_saber_versions::Entity::find()
+        .all(&data.db)
+        .await
+        .unwrap();
+    let matching_versions = matching_versions.par_iter().filter(|v| forge_mod.manifest.game_version.matches(&Version::parse(&v.ver).unwrap())).collect::<Vec<_>>();
+
+    // todo: signature verification
+    // todo: handle dependencies and conflicts
+
+    let conflicting_mod = mods::Entity::find()
+        .filter(mods::Column::Slug.eq(forge_mod.manifest._id.clone()))
+        .one(&data.db)
+        .await
+        .unwrap();
+
+    if conflicting_mod.is_none() {
+        // we are creating a new mod
+        //? check if the user has permission to create a new mod
+        //? MOD_STATS ; MODS ; USERS_MODS ; VERSION_STATS ; VERSIONS ; MOD_VERSIONS ; VERSIONS_BEAT_SABER_VERSIONS ; VERSIONS_CONFLICTS ; VERSIONS_DEPENDENCIES
+
+        let mod_stats = mod_stats::ActiveModel::default();
+        let mod_stats = mod_stats::Entity::insert(mod_stats).exec(&data.db).await.unwrap().last_insert_id;
+
+        let db_mod = mods::ActiveModel {
+            slug: ActiveValue::Set(forge_mod.manifest._id),
+            name: ActiveValue::Set(forge_mod.manifest.name),
+            author: ActiveValue::Set(user.id),
+            category: ActiveValue::Set(mod_category.id),
+            stats: ActiveValue::Set(mod_stats),
+            ..Default::default()
+        };
+        let db_mod = mods::Entity::insert(db_mod).exec(&data.db).await.unwrap().last_insert_id;
+
+        let users_mods  = users_mods::ActiveModel {
+            user_id: ActiveValue::Set(user.id),
+            mod_id: ActiveValue::Set(db_mod),
+        };
+        users_mods::Entity::insert(users_mods).exec(&data.db).await.unwrap();
+
+        let version_stats = version_stats::ActiveModel::default();
+        let version_stats = version_stats::Entity::insert(version_stats).exec(&data.db).await.unwrap().last_insert_id;
+
+        let version = versions::ActiveModel {
+            mod_id: ActiveValue::Set(db_mod),
+            version: ActiveValue::Set(forge_mod.manifest.version.to_string()),
+            stats: ActiveValue::Set(version_stats),
+            ..Default::default()
+        };
+        let version = versions::Entity::insert(version).exec(&data.db).await.unwrap().last_insert_id;
+
+        let mod_versions = mod_versions::ActiveModel {
+            mod_id: ActiveValue::Set(db_mod),
+            version_id: ActiveValue::Set(version),
+        };
+        mod_versions::Entity::insert(mod_versions).exec(&data.db).await.unwrap();
+        let mut version_query = Vec::new();
+        matching_versions.iter().for_each(|f| {
+            let version_beat_saber_versions = version_beat_saber_versions::ActiveModel {
+                version_id: ActiveValue::Set(version),
+                beat_saber_id: ActiveValue::Set(f.id),
+            };
+            version_query.push(version_beat_saber_versions);
+        });
+        version_beat_saber_versions::Entity::insert_many(version_query).exec(&data.db).await.unwrap();
+
+        //todo: handle dependencies and conflicts
+    } else {
+        // we are updating an existing mod
+        //? if the version is the same as the existing version, add the new version to the existing mod
+        //? with a newer timestamp, this will allow us to keep track of the mod's history
+        //? even if the mod is updated to the same version internally.
+        //? MODS ; USERS_MODS ; VERSION_STATS ; VERSIONS ; VERSIONS_BEAT_SABER_VERSIONS ; VERSIONS_CONFLICTS ; VERSIONS_DEPENDENCIES
+        // let mod_stats = mod_stats::ActiveModel::default();
+        // let mod_stats = mod_stats::Entity::insert(mod_stats).exec(&data.db).await.unwrap().last_insert_id;
+
+        // let db_mod = mods::ActiveModel {
+        //     slug: ActiveValue::Set(forge_mod.manifest._id),
+        //     name: ActiveValue::Set(forge_mod.manifest.name),
+        //     author: ActiveValue::Set(user.id),
+        //     category: ActiveValue::Set(mod_category.id),
+        //     stats: ActiveValue::Set(mod_stats),
+        //     ..Default::default()
+        // };
+        // let db_mod = mods::Entity::insert(db_mod).exec(&data.db).await.unwrap().last_insert_id;
+
+        // let users_mods  = users_mods::ActiveModel {
+        //     user_id: ActiveValue::Set(user.id),
+        //     mod_id: ActiveValue::Set(db_mod),
+        // };
+        // users_mods::Entity::insert(users_mods).exec(&data.db).await.unwrap();
+        
+
+        let db_mod = conflicting_mod.unwrap();
+
+        let mut db_model = mods::ActiveModel::from(db_mod.clone());
+        db_model.updated_at = ActiveValue::Set(Utc::now().naive_local());
+        mods::Entity::update(db_model).exec(&data.db).await.unwrap();
+
+        let db_mod = db_mod.id;
+
+        let version_stats = version_stats::ActiveModel::default();
+        let version_stats = version_stats::Entity::insert(version_stats).exec(&data.db).await.unwrap().last_insert_id;
+
+        let version = versions::ActiveModel {
+            mod_id: ActiveValue::Set(db_mod),
+            version: ActiveValue::Set(forge_mod.manifest.version.to_string()),
+            stats: ActiveValue::Set(version_stats),
+            ..Default::default()
+        };
+        let version = versions::Entity::insert(version).exec(&data.db).await.unwrap().last_insert_id;
+
+        let mod_versions = mod_versions::ActiveModel {
+            mod_id: ActiveValue::Set(db_mod),
+            version_id: ActiveValue::Set(version),
+        };
+        mod_versions::Entity::insert(mod_versions).exec(&data.db).await.unwrap();
+        let mut version_query = Vec::new();
+        matching_versions.iter().for_each(|f| {
+            let version_beat_saber_versions = version_beat_saber_versions::ActiveModel {
+                version_id: ActiveValue::Set(version),
+                beat_saber_id: ActiveValue::Set(f.id),
+            };
+            version_query.push(version_beat_saber_versions);
+        });
+        version_beat_saber_versions::Entity::insert_many(version_query).exec(&data.db).await.unwrap();
+    }
+
+    HttpResponse::Created().finish()
+}
+
 // #[get("/mods")]
 // pub async fn get_mods(
 //     data: web::Data<AppState>,

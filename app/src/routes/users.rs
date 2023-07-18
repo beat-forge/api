@@ -187,7 +187,7 @@ pub async fn get_user_full(
     let mut res_mods = Vec::new();
 
     for m in mods {
-        let category = categories::Entity::find_by_id(m.category.unwrap())
+        let category = categories::Entity::find_by_id(m.category)
             .one(&data.db)
             .await
             .unwrap()
@@ -199,7 +199,7 @@ pub async fn get_user_full(
             .await
             .unwrap();
 
-        let stats = mod_stats::Entity::find_by_id(m.stats.unwrap())
+        let stats = mod_stats::Entity::find_by_id(m.stats)
             .one(&data.db)
             .await
             .unwrap()
