@@ -1,41 +1,93 @@
-// use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
-// use chrono::Utc;
-// use entity::categories::Entity as ModCategory;
-// use forge_lib::structs::forgemod::ForgeMod;
-// use futures::StreamExt;
-// use sea_orm::EntityTrait;
-// use semver::Version;
-// use serde::{Deserialize, Serialize};
-// use serde_json::json;
+use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
+use entity::{beat_saber_versions, categories, mod_versions, mods, versions};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationDef};
+use semver::{Version, VersionReq};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 
-// use crate::{
-//     structs::{
-//         mods::{Mod, ModStats, ModVersion, ModVersionStats},
-//         users::{Permission, User},
-//     },
-//     utils::get_bearer_auth,
-//     AppState,
-// };
+use crate::AppState;
 
-// #[get("/mods/categorys")]
-// pub async fn categorys(req: HttpRequest, data: web::Data<AppState>) -> impl Responder {
-//     let categorys = ModCategory::find().all(&data.db).await.unwrap();
+#[get("/mods/categories")]
+pub async fn get_categories(data: web::Data<AppState>) -> impl Responder {
+    HttpResponse::Ok().json(json!({ "categories": categories::Entity::find().all(&data.db).await.unwrap().iter().map(|c| c.name.clone()).collect::<Vec<String>>() }))
+}
 
-//     HttpResponse::Ok().json(json!({
-//         "categorys": categorys
-//     }))
-// }
+#[get("/game_versions")]
+pub async fn get_game_versions(data: web::Data<AppState>) -> impl Responder {
+    HttpResponse::Ok().json(json!({ "game_versions": beat_saber_versions::Entity::find().all(&data.db).await.unwrap().iter().map(|m| m.ver.clone()).collect::<Vec<String>>() }))
+}
 
-// #[derive(Serialize, Deserialize)]
-// pub struct ModRequestQuery {
-//     version: String,
-//     category: Option<ModCategory>,
-//     sort_by: Option<String>,
-//     search: Option<String>,
-//     limit: Option<u32>,
-//     offset: Option<u32>,
-// }
+#[derive(Serialize, Deserialize)]
+pub struct ModRequestQuery {
+    game_version: String, // semver req
+    category: Option<String>,
+    sort_by: Option<String>,
+    search: Option<String>,
+    limit: Option<u64>,
+    offset: Option<u64>,
+}
 
+#[get("/mods")]
+pub async fn get_mods(
+    data: web::Data<AppState>,
+    query: web::Query<ModRequestQuery>,
+) -> impl Responder {
+    let limit = query.limit.unwrap_or(10);
+    if limit > 100 {
+        return HttpResponse::BadRequest().json(json!({
+            "error": "Limit cannot be greater than 100."
+        }));
+    }
+
+    let offset = query.offset.unwrap_or(0);
+
+    let looking_version = match VersionReq::parse(&query.game_version) {
+        Ok(v) => v,
+        Err(err) => {
+            return HttpResponse::BadRequest().json(json!({
+                "error": err.to_string()
+            }))
+        }
+    };
+
+    let mut mods_query_base = mods::Entity::find();
+
+    if query.category.is_some() {
+        mods_query_base = mods_query_base
+            .filter(mods::Column::Category.contains(query.category.as_ref().unwrap()));
+    };
+
+    if query.search.is_some() {
+        mods_query_base =
+            mods_query_base.filter(mods::Column::Name.contains(query.search.as_ref().unwrap()));
+    };
+
+    let mods = mods_query_base.all(&data.db).await.unwrap();
+
+    let mod_versions = mod_versions::Entity::find().all(&data.db).await.unwrap();
+    let versions = versions::Entity::find().all(&data.db).await.unwrap();
+
+    let mut found_mods = vec![];
+    for m in mods {
+        let mut found = false;
+        for mv in mod_versions.iter().filter(|mv| mv.mod_id == m.id) {
+            for v in versions.iter().filter(|v| v.id == mv.version_id) {
+                if looking_version.matches(&Version::parse(&v.version).unwrap()) {
+                    found = true;
+                    break;
+                }
+            }
+            if found {
+                break;
+            }
+        }
+        if found {
+            found_mods.push(m); // I am for loop jesus - checksum 2023
+        }
+    }
+
+    HttpResponse::Ok().json(json!({ "mods": found_mods }))
+}
 // #[get("/mods")]
 // pub async fn get_mods(
 //     data: web::Data<AppState>,
@@ -51,7 +103,7 @@
 //     };
 
 //     let versions = data.db.collection::<ModVersion>("mods.versions");
-//     let looking_version = Version::parse(&query.version).unwrap();
+//     let looking_version = Version::parse(&q/entityuery.version).unwrap();
 //     let mut found_mods = vec![];
 
 //     while mods.advance().await.unwrap() {

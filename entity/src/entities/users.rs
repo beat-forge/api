@@ -16,6 +16,10 @@ pub struct Model {
     pub permissions: i32,
     #[sea_orm(column_type = "Text", nullable)]
     pub display_name: Option<String>,
+    #[sea_orm(column_type = "Text", unique)]
+    pub email: String,
+    #[sea_orm(column_type = "Text", unique)]
+    pub api_key: String,
     #[sea_orm(column_type = "Text", nullable)]
     pub bio: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
