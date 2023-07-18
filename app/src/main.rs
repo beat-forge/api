@@ -52,7 +52,9 @@ async fn main() {
                 key: std::fs::read("./secret.key").unwrap(),
             }))
             .service(index)
-            // .service(routes::mods::get_mod)
+            .service(routes::mods::get_mod)
+            // .service(routes::mods::get_mod_full)
+            .service(routes::mods::get_mods_by_author)
             .service(routes::mods::get_mods)
             .service(routes::mods::create_mod)
             .service(routes::mods::get_categories)
