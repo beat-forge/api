@@ -97,10 +97,13 @@ pub async fn auth_user(
     )
     .unwrap();
 
-    let mut cookie = Cookie::new("jwt", jwt);
+    let mut cookie = Cookie::new("jwt", &jwt);
     cookie.set_domain("beatforge.net");
 
-    let mut response = HttpResponse::Ok().body("ok");
+    let mut response = HttpResponse::Ok().json(json!({
+        "token": jwt,
+    }));
+    
     response.add_cookie(&cookie).unwrap();
 
     response
