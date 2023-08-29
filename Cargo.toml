@@ -15,7 +15,7 @@ repository = "https://github.com/beat-forge/api"
 
 [dependencies]
 actix-cors = "0.6.4"
-actix-web = "4.3.1"
+actix-web = "4.4.0"
 actix-web-lab = "0.19.1"
 chrono = { version = "0.4.26", features = ["serde"] }
 env_logger = "0.10.0"
