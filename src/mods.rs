@@ -13,6 +13,7 @@ use sea_orm::{
 };
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
+use tap::Tap;
 use uuid::Uuid;
 
 use entity::prelude::*;
