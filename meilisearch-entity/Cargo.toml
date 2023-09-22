@@ -8,6 +8,6 @@ edition = "2021"
 [dependencies]
 chrono = { version = "0.4.31", features = ["serde"] }
 entity = { path = "../entity" }
-sea-orm = "0.12.2"
+sea-orm = "0.12.3"
 semver = { version = "1.0.18", features = ["serde"] }
 serde = { version = "1.0.188", features = ["derive"] }
