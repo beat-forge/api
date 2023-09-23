@@ -14,7 +14,7 @@ dotenv = "0.15.0"
 entity = { path = "../entity" }
 meilisearch-entity = { path = "../meilisearch-entity" }
 futures = "0.3.28"
-semver = "1.0.18"
+semver = "1.0.19"
 meilisearch-sdk = "0.24.2"
 
 [dependencies.sea-orm-migration]
