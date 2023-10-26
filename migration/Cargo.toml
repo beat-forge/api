@@ -13,7 +13,7 @@ async-std = { version = "1", features = ["attributes", "tokio1"] }
 dotenv = "0.15.0"
 entity = { path = "../entity" }
 meilisearch-entity = { path = "../meilisearch-entity" }
-futures = "0.3.28"
+futures = "0.3.29"
 semver = "1.0.20"
 meilisearch-sdk = "0.24.2"
 
