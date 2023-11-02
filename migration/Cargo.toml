@@ -15,7 +15,7 @@ entity = { path = "../entity" }
 meilisearch-entity = { path = "../meilisearch-entity" }
 futures = "0.3.29"
 semver = "1.0.20"
-meilisearch-sdk = "0.24.2"
+meilisearch-sdk = "0.24.3"
 
 [dependencies.sea-orm-migration]
 version = "0.12"
