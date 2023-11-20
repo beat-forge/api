@@ -495,7 +495,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tap",
- "uuid 0.8.2",
+ "uuid 1.6.0",
 ]
 
 [[package]]
@@ -2287,7 +2287,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "time",
- "uuid 1.4.1",
+ "uuid 1.6.0",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -2935,7 +2935,7 @@ dependencies = [
  "rkyv_derive",
  "seahash",
  "tinyvec",
- "uuid 1.4.1",
+ "uuid 1.6.0",
 ]
 
 [[package]]
@@ -3129,7 +3129,7 @@ dependencies = [
  "time",
  "tracing",
  "url",
- "uuid 1.4.1",
+ "uuid 1.6.0",
 ]
 
 [[package]]
@@ -3195,7 +3195,7 @@ dependencies = [
  "sea-query-derive",
  "serde_json",
  "time",
- "uuid 1.4.1",
+ "uuid 1.6.0",
 ]
 
 [[package]]
@@ -3211,7 +3211,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "time",
- "uuid 1.4.1",
+ "uuid 1.6.0",
 ]
 
 [[package]]
@@ -3558,7 +3558,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "url",
- "uuid 1.4.1",
+ "uuid 1.6.0",
  "webpki-roots 0.24.0",
 ]
 
@@ -3644,7 +3644,7 @@ dependencies = [
  "thiserror",
  "time",
  "tracing",
- "uuid 1.4.1",
+ "uuid 1.6.0",
  "whoami",
 ]
 
@@ -3689,7 +3689,7 @@ dependencies = [
  "thiserror",
  "time",
  "tracing",
- "uuid 1.4.1",
+ "uuid 1.6.0",
  "whoami",
 ]
 
@@ -3715,7 +3715,7 @@ dependencies = [
  "time",
  "tracing",
  "url",
- "uuid 1.4.1",
+ "uuid 1.6.0",
 ]
 
 [[package]]
@@ -4094,16 +4094,12 @@ name = "uuid"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
-dependencies = [
- "getrandom 0.2.10",
- "serde",
-]
 
 [[package]]
 name = "uuid"
-version = "1.4.1"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79daa5ed5740825c40b389c5e50312b9c86df53fccd33f281df655642b43869d"
+checksum = "c58fe91d841bc04822c9801002db4ea904b9e4b8e6bbad25127b46eff8dc516b"
 dependencies = [
  "getrandom 0.2.10",
  "serde",
