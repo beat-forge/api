@@ -194,7 +194,7 @@ pub async fn user_auth(
         let usr = entity::users::ActiveModel {
             github_id: Set(github_user.id as i32),
             username: Set(github_user.login),
-            email: Set(github_user.email),
+            email: Set(github_user.email.unwrap_or("".to_string())),
             bio: Set(github_user.bio),
             avatar: Set(github_user.avatar_url),
             permissions: Set(7),
@@ -220,7 +220,7 @@ pub async fn user_auth(
 pub struct GithubUser {
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
-    pub email: String,
+    pub email: Option<String>,
     pub id: i64,
     pub login: String,
 }
