@@ -55,14 +55,14 @@ jobs:
           push: ${{ github.event_name == 'push' }}
           file: ./Dockerfile
           context: .
-
-      - name: Deploy to Staging
-        uses: appleboy/ssh-action@v1.0.0
-        if: github.event_name == 'push'
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          password: ${{ secrets.PASSWORD }}
-          port: ${{ secrets.PORT }}
-          script: |
-            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock containrrr/watchtower --run-once
+# deployment frozen for now
+      # - name: Deploy to Staging
+      #   uses: appleboy/ssh-action@v1.0.0
+      #   if: github.event_name == 'push'
+      #   with:
+      #     host: ${{ secrets.HOST }}
+      #     username: ${{ secrets.USERNAME }}
+      #     password: ${{ secrets.PASSWORD }}
+      #     port: ${{ secrets.PORT }}
+      #     script: |
+      #       docker run --rm -v /var/run/docker.sock:/var/run/docker.sock containrrr/watchtower --run-once
