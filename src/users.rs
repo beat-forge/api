@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::{
     auth::{validate_permissions, Authorization, JWTAuth, Permission},
     mods::{self, Mod},
-    KEY, DB_CONN
+    KEY, DB_POOL
 };
 
 #[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
@@ -156,7 +156,7 @@ pub async fn user_auth(
     // info: web::Query<UserAuthReq>,
     Query(UserAuthReq { code }): Query<UserAuthReq>,
 ) -> impl IntoResponse {
-    let db = DB_CONN.get().unwrap().clone();
+    let db = DB_POOL.get().unwrap().clone();
 
     let gat = minreq::post("https://github.com/login/oauth/access_token")
         .with_header("User-Agent", "forge-registry")
@@ -228,7 +228,7 @@ pub struct GithubUser {
 pub async fn get_me(
     req: &Request
 ) -> impl IntoResponse {
-    let db = DB_CONN.get().unwrap().clone();
+    let db = DB_POOL.get().unwrap().clone();
 
     let auth = req
         .headers()

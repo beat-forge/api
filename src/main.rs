@@ -7,13 +7,13 @@ use async_graphql::{
 use async_graphql_poem::GraphQL;
 use cached::async_sync::OnceCell;
 use meilisearch_sdk::settings::Settings;
-use migration::MigratorTrait;
 use poem::{
     get, handler, listener::TcpListener, post, IntoResponse, Response,
     Route,
 };
 use rand::Rng;
 use sea_orm::{DatabaseConnection, EntityTrait, PaginatorTrait};
+use sqlx::{PgPool, postgres::PgPoolOptions, migrate::Migrator};
 use tracing::log::info;
 
 mod auth;
@@ -22,6 +22,7 @@ mod mods;
 mod schema;
 mod users;
 mod versions;
+mod entities;
 
 use crate::schema::Query;
 
@@ -78,13 +79,15 @@ lazy_static::lazy_static! {
     };
 }
 
-pub static DB_CONN: OnceCell<DatabaseConnection> = OnceCell::const_new();
+pub static DB_POOL: OnceCell<PgPool> = OnceCell::const_new();
 
 pub static MEILI_CONN: OnceCell<meilisearch_sdk::client::Client> = OnceCell::const_new();
 
+pub static MIGRATOR: Migrator = sqlx::migrate!();
+
 #[handler]
 async fn index() -> impl IntoResponse {
-    let db = DB_CONN.get().unwrap().clone();
+    let db = DB_POOL.get().unwrap().clone();
 
     let user_count = entity::users::Entity::find().count(&db).await.unwrap();
     let mod_count = entity::mods::Entity::find().count(&db).await.unwrap();
@@ -117,7 +120,7 @@ async fn index() -> impl IntoResponse {
 }
 
 #[tokio::main]
-async fn main() -> io::Result<()> {
+async fn main() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
     tracing_subscriber::fmt().init();
 
@@ -127,19 +130,15 @@ async fn main() -> io::Result<()> {
 
     let _ = std::fs::create_dir(Path::new("./data/cdn"));
 
-    let mut db_conf = sea_orm::ConnectOptions::new(std::env::var("DATABASE_URL").unwrap());
+    let pool = PgPoolOptions::new()
+    .min_connections(5)
+    .max_connections(20)
+    .connect(&std::env::var("DATABASE_URL").unwrap()).await?;
 
-    db_conf.max_connections(20);
-    db_conf.min_connections(5);
-    db_conf.sqlx_logging(true);
-    db_conf.sqlx_logging_level(tracing::log::LevelFilter::Debug);
-
-    let db_conn = sea_orm::Database::connect(db_conf).await.unwrap();
-
-    DB_CONN.set(db_conn.clone()).unwrap();
+    DB_POOL.set(pool.clone()).unwrap();
 
     //migrate
-    migration::Migrator::up(&db_conn, None).await.unwrap();
+    MIGRATOR.run(&pool).await?;
 
     if !std::env::var("NO_MEILI").unwrap_or("false".to_string()).parse::<bool>().unwrap_or(false) {
         // set meilisearch settings
@@ -191,44 +190,4 @@ async fn main() -> io::Result<()> {
         .await?;
 
     Ok(())
-    // Start HTTP server
-    // HttpServer::new(move || {
-    //     let schema = Schema::build(Query, EmptyMutation, EmptySubscription).data(Database {
-    //         pool: db_conn.clone(),
-    //     });
-
-    //     App::new()
-    //         .app_data(Data::new(
-    //             Schema::build(Query, EmptyMutation, EmptySubscription).data(Database {
-    //                 pool: db_conn.clone(),
-    //             }),
-    //         ))
-    //         .app_data(Data::new(Database {
-    //             pool: db_conn.clone(),
-    //         }))
-    //         // .service(
-    //         //     web::resource("/graphql")
-    //         //         .route(web::post().to(graphql_route))
-    //         //         .route(web::get().to(graphql_route)),
-    //         // )
-    //         // .service(
-    //         //         web::post().to(|data: web::Data<Schema>| {
-    //         //             async_graphql_actix_web::graphql(data, async_graphql_actix_web::GraphQLPlaygroundConfig::new())
-    //         //         })
-    //         // )
-    //         .service(web::resource("/playground").route(web::get().to(playground_route)))
-    //         .service(web::resource("/graphiql").route(web::get().to(graphiql_route)))
-    //         .service(users::user_auth)
-    //         .service(mods::create_mod)
-    //         .service(cdn::cdn_get)
-    //         .service(index)
-    //         .service(users::get_me)
-    //         // the graphiql UI requires CORS to be enabled
-    //         .wrap(Cors::permissive())
-    //         .wrap(middleware::Logger::default())
-    // })
-    // .workers(2)
-    // .bind(("0.0.0.0", 8080))?
-    // .run()
-    // .await
 }

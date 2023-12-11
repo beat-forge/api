@@ -1,10 +1,3 @@
-[workspace]
-members = [
-    ".",
-    "*entity",
-    "migration"
-]
-
 [package]
 name = "api"
 version = "0.1.0"
@@ -18,9 +11,9 @@ repository = "https://github.com/beat-forge/api"
 # actix-web = "4.4.0"
 # actix-web-lab = "0.20.1"
 chrono = { version = "0.4.31", features = ["serde"] }
-sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-actix-rustls"] }
+# sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-actix-rustls"] }
 uuid = { version = "0.8", features = ["serde", "v4"] }
-entity = { path = "./entity" }
+# entity = { path = "./entity" }
 dotenv = "0.15.0"
 futures = "0.3.29"
 serde = { version = "1.0.192", features = ["derive"] }
@@ -32,7 +25,7 @@ minreq = { version = "2.11.0", features = ["serde_json", "json-using-serde", "ht
 serde_json = "1.0.108"
 lazy_static = "1.4.0"
 forge-lib = { git = "https://github.com/beat-forge/lib", version = "1.0.0" }
-migration = { path = "./migration" }
+# migration = { path = "./migration" }
 semver = "1.0.20"
 once_cell = "1.18.0"
 meilisearch-sdk = "0.24.3"
@@ -46,3 +39,5 @@ tracing-subscriber = { version = "0.3.18", features = ["chrono", "env-filter", "
 poem = "1.3.59"
 async-graphql-poem = "6.0.11"
 tokio = { version = "1.35.0", features = ["macros"] }
+sqlx = { version = "0.7.3", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
+anyhow = "1.0.75"

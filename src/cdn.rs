@@ -5,7 +5,7 @@ use poem::{handler, web::Path, Response, IntoResponse, http::StatusCode};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, DatabaseConnection};
 use serde::Deserialize;
 
-use crate::DB_CONN;
+use crate::DB_POOL;
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -79,7 +79,7 @@ pub async fn cdn_get(
     // path: web::Path<(String, String, CdnType)>,
     Path((slug, version, dl_type)): Path<(String, String, CdnType)>,
 ) -> impl IntoResponse {
-    let db = DB_CONN.get().unwrap().clone();
+    let db = DB_POOL.get().unwrap().clone();
 
     cdn_handler(db, slug, version, dl_type).await
 }
@@ -91,7 +91,7 @@ pub async fn cdn_get_typeless(
     // path: web::Path<(String, String)>,
     Path((slug, version)): Path<(String, String)>,
 ) -> impl IntoResponse {
-    let db = DB_CONN.get().unwrap().clone();
+    let db = DB_POOL.get().unwrap().clone();
 
     cdn_handler(db, slug, version, CdnType::Package).await
 }

@@ -20,7 +20,7 @@ use meilisearch_entity::prelude::*;
 
 use crate::{
     auth::{validate_permissions, Authorization, Permission},
-    versions::{self, GVersion}, DB_CONN,
+    versions::{self, GVersion}, DB_POOL,
 };
 
 #[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
@@ -197,7 +197,7 @@ pub async fn create_mod(
     req: &Request,
     body: Vec<u8>,
 ) -> Response {
-    let db = DB_CONN.get().unwrap().clone();
+    let db = DB_POOL.get().unwrap().clone();
 
     let auth = req
         .headers()
