@@ -1,19 +1,18 @@
 use std::vec;
 
-use actix_web::{post, web, HttpRequest, HttpResponse, Responder};
+use async_graphql::{SimpleObject, FieldError, FieldResult, Error};
 use chrono::{DateTime, Utc};
 
-use forge_lib::structs::{forgemod::ForgeMod, v1::{unpack_v1_forgemod, ForgeModTypes}};
-use futures::StreamExt;
-use juniper::{graphql_value, FieldError, FieldResult, GraphQLObject};
-use migration::OnConflict;
+use forge_lib::structs::v1::{unpack_v1_forgemod, ForgeModTypes};
+// use juniper::{graphql_value, FieldError, FieldResult, GraphQLObject};
+
+use poem::{handler, Response, Request, http::StatusCode};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, Set,
     TransactionTrait,
 };
-use semver::{Version, VersionReq};
+use semver::Version;
 use serde::{Deserialize, Serialize};
-use tap::Tap;
 use uuid::Uuid;
 
 use entity::prelude::*;
@@ -21,11 +20,10 @@ use meilisearch_entity::prelude::*;
 
 use crate::{
     auth::{validate_permissions, Authorization, Permission},
-    versions::{self, GVersion},
-    Database,
+    versions::{self, GVersion}, DB_CONN,
 };
 
-#[derive(GraphQLObject, Debug, Deserialize, Serialize, Clone)]
+#[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
 pub struct Mod {
     pub id: Uuid,
     pub slug: String,
@@ -41,7 +39,7 @@ pub struct Mod {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(GraphQLObject, Debug, Deserialize, Serialize, Clone)]
+#[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
 pub struct ModAuthor {
     pub id: Uuid,
     pub username: String,
@@ -96,14 +94,14 @@ impl Mod {
     }
 }
 
-#[derive(GraphQLObject, Debug, Deserialize, Serialize, Clone)]
+#[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
 pub struct GModStats {
     pub downloads: i32,
     // pub rating: f32,
     // pub rating_count: i32,
 }
 
-#[derive(GraphQLObject, Debug, Deserialize, Serialize, Clone)]
+#[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
 pub struct ModCategory {
     pub name: String,
     pub desc: String,
@@ -158,9 +156,8 @@ pub async fn find_by_id(db: &DatabaseConnection, id: Uuid) -> FieldResult<Mod> {
     if let Some(m) = m {
         Mod::from_db_mod(db, m).await
     } else {
-        Err(FieldError::new(
+        Err(Error::new(
             "Mod not found",
-            graphql_value!({ "internal_error": "Mod not found" }),
         ))
     }
 }
@@ -174,9 +171,8 @@ pub async fn find_by_slug(db: &DatabaseConnection, slug: String) -> FieldResult<
     if let Some(m) = m {
         Mod::from_db_mod(db, m).await
     } else {
-        Err(FieldError::new(
+        Err(Error::new(
             "Mod not found",
-            graphql_value!({ "internal_error": "Mod not found" }),
         ))
     }
 }
@@ -196,12 +192,13 @@ pub async fn find_by_author(db: &DatabaseConnection, author: Uuid) -> FieldResul
     Ok(r)
 }
 
-#[post("/mods")]
+#[handler]
 pub async fn create_mod(
-    db: web::Data<Database>,
-    mut payload: web::Payload,
-    req: HttpRequest,
-) -> impl Responder {
+    req: &Request,
+    body: Vec<u8>,
+) -> Response {
+    let db = DB_CONN.get().unwrap().clone();
+
     let auth = req
         .headers()
         .get("Authorization")
@@ -211,27 +208,27 @@ pub async fn create_mod(
     let auser;
     if auth.starts_with("Bearer") {
         let auth = Authorization::parse(Some(auth.split(" ").collect::<Vec<_>>()[1].to_string()));
-        let user = auth.get_user(&db.pool).await.unwrap();
+        let user = auth.get_user(&db).await.unwrap();
         if !validate_permissions(&user, Permission::CREATE_MOD).await {
-            return HttpResponse::Unauthorized().body("Unauthorized");
+            return Response::builder().status(StatusCode::UNAUTHORIZED).body("Unauthorized");
         }
         auser = user;
     } else {
-        return HttpResponse::Unauthorized().body("Unauthorized");
+        return Response::builder().status(StatusCode::UNAUTHORIZED).body("Unauthorized");
     }
 
-    let mut buf = Vec::new();
+    // let mut buf = Vec::new();
 
-    while let Some(item) = payload.next().await {
-        let item = item.unwrap();
-        buf.extend_from_slice(&item);
-    }
+    // while let Some(item) = payload.next().await {
+    //     let item = item.unwrap();
+    //     buf.extend_from_slice(&item);
+    // 
 
     let forgemod = {
-        let fm = unpack_v1_forgemod(&*buf).unwrap();
+        let fm = unpack_v1_forgemod(&*body).unwrap();
         match fm {
             ForgeModTypes::Mod(fm) => fm,
-            _ => return HttpResponse::BadRequest().body("Invalid ForgeMod"),
+            _ => return Response::builder().status(StatusCode::BAD_REQUEST).body("Invalid ForgeMod"),
         }
     };
 
@@ -239,7 +236,7 @@ pub async fn create_mod(
 
     let db_cata = Categories::find()
         .filter(entity::categories::Column::Name.eq(manifest.category.clone().to_string()))
-        .one(&db.pool)
+        .one(&db)
         .await
         .unwrap();
 
@@ -249,7 +246,7 @@ pub async fn create_mod(
     } else {
         Categories::find()
             .filter(entity::categories::Column::Name.eq("other"))
-            .one(&db.pool)
+            .one(&db)
             .await
             .unwrap()
             .unwrap()
@@ -257,7 +254,7 @@ pub async fn create_mod(
 
     let v_req = manifest.game_version.clone();
     let vers = BeatSaberVersions::find()
-        .all(&db.pool)
+        .all(&db)
         .await
         .unwrap()
         .into_iter()
@@ -265,19 +262,19 @@ pub async fn create_mod(
         .collect::<Vec<_>>();
 
     if vers.len() == 0 {
-        return HttpResponse::BadRequest().body("Invalid game version");
+        return Response::builder().status(StatusCode::BAD_REQUEST).body("No supported versions");
     }
 
     // see if mod exists; if it does add a new version; if it doesn't create a new mod
     let mby_mod = Mods::find()
         .filter(entity::mods::Column::Slug.eq(forgemod.manifest._id.clone()))
-        .one(&db.pool)
+        .one(&db)
         .await
         .unwrap();
 
     let v_id;
 
-    let trans = db.pool.begin().await.unwrap();
+    let trans = db.begin().await.unwrap();
 
     if let Some(db_mod) = mby_mod {
         let db_mod = db_mod.id;
@@ -536,7 +533,7 @@ pub async fn create_mod(
         .unwrap();
 
     let _ = std::fs::create_dir(format!("./data/cdn/{}", &db_mod.id));
-    std::fs::write(format!("./data/cdn/{}/{}.forgemod", &db_mod.id, v_id), buf).unwrap();
+    std::fs::write(format!("./data/cdn/{}/{}.forgemod", &db_mod.id, v_id), body).unwrap();
 
     trans.commit().await.unwrap();
 
@@ -549,7 +546,7 @@ pub async fn create_mod(
     let mod_vers = ModVersions::find()
         .filter(entity::mod_versions::Column::ModId.eq(db_mod.id))
         .find_also_related(Versions)
-        .all(&db.pool)
+        .all(&db)
         .await
         .unwrap()
         .into_iter()
@@ -558,7 +555,7 @@ pub async fn create_mod(
 
     let supported_versions = ModBeatSaberVersions::find().filter(entity::mod_beat_saber_versions::Column::ModId.eq(db_mod.id))
         .find_also_related(BeatSaberVersions)
-        .all(&db.pool)
+        .all(&db)
         .await
         .unwrap()
         .into_iter()
@@ -566,7 +563,7 @@ pub async fn create_mod(
         .collect::<Vec<_>>();
 
     let mod_stats = ModStats::find_by_id(db_mod.stats)
-        .one(&db.pool)
+        .one(&db)
         .await
         .unwrap()
         .unwrap();
@@ -594,5 +591,5 @@ pub async fn create_mod(
     };
     client.index(format!("{}mods", std::env::var("MEILI_PREFIX").unwrap_or("".to_string()))).add_or_replace(&[meilimod], None).await.unwrap();
 
-    HttpResponse::Created().finish()
+    Response::builder().status(StatusCode::CREATED).body("Created")
 }

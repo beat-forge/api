@@ -1,15 +1,12 @@
 use chrono::{DateTime, Utc};
 use entity::prelude::*;
-use juniper::{
-    FieldError, FieldResult, GraphQLObject,
-};
+use async_graphql::*;
+
 use serde::{Serialize, Deserialize};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, DatabaseConnection};
 use uuid::Uuid;
 
-use crate::Database;
-
-#[derive(GraphQLObject, Debug, Deserialize, Serialize, Clone)]
+#[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
 pub struct GVersion {
     pub id: Uuid,
     pub mod_id: Uuid,
@@ -21,7 +18,7 @@ pub struct GVersion {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(GraphQLObject, Debug, Deserialize, Serialize, Clone)]
+#[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
 pub struct GVersionStats {
     pub downloads: i32,
     // pub rating: f32,

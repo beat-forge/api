@@ -1,21 +1,20 @@
-use actix_web::{post, web, HttpRequest, HttpResponse, Responder, get};
+use async_graphql::{SimpleObject, FieldResult, FieldError, Error};
 use chrono::{DateTime, Utc};
 use entity::prelude::*;
-use juniper::{
-    graphql_value, FieldError, FieldResult, GraphQLObject,
-};
+use poem::{handler, web::{Query, Json}, Response, Request, IntoResponse, http::StatusCode};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set, DatabaseConnection};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tracing::debug;
 use uuid::Uuid;
 
 use crate::{
     auth::{validate_permissions, Authorization, JWTAuth, Permission},
     mods::{self, Mod},
-    Database, KEY,
+    KEY, DB_CONN
 };
 
-#[derive(GraphQLObject, Debug, Deserialize, Serialize, Clone)]
+#[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
 pub struct User {
     pub id: Uuid,
     pub github_id: String,
@@ -126,9 +125,8 @@ pub async fn find_by_id(db: &DatabaseConnection, _id: Uuid, auth: Authorization)
     let user = Users::find_by_id(id).one(db).await?;
 
     if user.is_none() {
-        return Err(juniper::FieldError::new(
-            "User not found",
-            graphql_value!({ "notFound": "User not found" }),
+        return Err(Error::new(
+            "User not found"
         ));
     }
 
@@ -151,13 +149,14 @@ pub struct UserAuthReq {
     pub code: String,
 }
 
-#[post("/auth/github")]
+#[handler]
 pub async fn user_auth(
-    _req: HttpRequest,
-    data: web::Data<Database>,
-    info: web::Query<UserAuthReq>,
-) -> impl Responder {
-    let code = &info.code;
+    // _req: HttpRequest,
+    // data: web::Data<Database>,
+    // info: web::Query<UserAuthReq>,
+    Query(UserAuthReq { code }): Query<UserAuthReq>,
+) -> impl IntoResponse {
+    let db = DB_CONN.get().unwrap().clone();
 
     let gat = minreq::post("https://github.com/login/oauth/access_token")
         .with_header("User-Agent", "forge-registry")
@@ -181,12 +180,12 @@ pub async fn user_auth(
         .send()
         .unwrap();
 
-    log::debug!("{}", github_user.as_str().unwrap());
+    debug!("{}", github_user.as_str().unwrap());
     let github_user = serde_json::from_str::<GithubUser>(github_user.as_str().unwrap()).unwrap();
 
     let mby_user = Users::find()
         .filter(entity::users::Column::GithubId.eq(github_user.id as i32))
-        .one(&data.pool)
+        .one(&db)
         .await
         .unwrap();
 
@@ -201,19 +200,19 @@ pub async fn user_auth(
             ..Default::default()
         };
 
-        Users::insert(usr).exec(&data.pool).await.unwrap();
+        Users::insert(usr).exec(&db).await.unwrap();
     }
 
     let user = Users::find()
         .filter(entity::users::Column::GithubId.eq(github_user.id as i32))
-        .one(&data.pool)
+        .one(&db)
         .await
         .unwrap()
         .unwrap();
 
     let jwt = JWTAuth::new(user).encode(*KEY.clone());
 
-    HttpResponse::Ok().json(json!({ "jwt": jwt }))
+   Json(json!({ "jwt": jwt }))
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -225,11 +224,12 @@ pub struct GithubUser {
     pub login: String,
 }
 
-#[get("/me")]
+#[handler]
 pub async fn get_me(
-    req: HttpRequest,
-    data: web::Data<Database>,
-) -> impl Responder {
+    req: &Request
+) -> impl IntoResponse {
+    let db = DB_CONN.get().unwrap().clone();
+
     let auth = req
         .headers()
         .get("Authorization")
@@ -239,11 +239,11 @@ pub async fn get_me(
     let auser;
     if auth.starts_with("Bearer") {
         let auth = Authorization::parse(Some(auth.split(" ").collect::<Vec<_>>()[1].to_string()));
-        let user = auth.get_user(&data.pool).await.unwrap();
+        let user = auth.get_user(&db).await.unwrap();
         auser = user;
     } else {
-        return HttpResponse::Unauthorized().body("Unauthorized");
+        return Response::builder().status(StatusCode::UNAUTHORIZED).body("Unauthorized");
     }
 
-    HttpResponse::Ok().json(auser)
+    Json(auser).into_response()
 }

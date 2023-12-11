@@ -3,7 +3,7 @@ use sea_orm::{EntityTrait, QueryFilter, ColumnTrait, DatabaseConnection};
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
-use crate::{Database, KEY, Key, users::User};
+use crate::{KEY, Key, users::User};
 
 bitflags::bitflags! {
     pub struct Permission: i32 {
