@@ -9,7 +9,7 @@ use crate::DB_CONN;
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
-enum CdnType {
+pub enum CdnType {
     Dll,
     Package,
 }
