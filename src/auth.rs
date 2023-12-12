@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
-use sea_orm::{EntityTrait, QueryFilter, ColumnTrait, DatabaseConnection};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{KEY, Key, users::User};
+use crate::{models, users::User, Key, KEY};
 
 bitflags::bitflags! {
     pub struct Permission: i32 {
@@ -23,7 +23,7 @@ bitflags::bitflags! {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JWTAuth {
-    pub user: entity::users::Model,
+    pub user: models::dUser,
     #[serde(with = "chrono::serde::ts_seconds")]
     pub(crate) exp: DateTime<Utc>, // Required (validate_exp defaults to true in validation). Expiration time (as UTC timestamp)
     #[serde(with = "chrono::serde::ts_seconds")]
@@ -31,7 +31,7 @@ pub struct JWTAuth {
 }
 
 impl JWTAuth {
-    pub fn new(user: entity::users::Model) -> Self {
+    pub fn new(user: models::dUser) -> Self {
         let now = Utc::now();
 
         Self {
@@ -47,20 +47,26 @@ impl JWTAuth {
 
     pub fn decode(dec: String, key: Key) -> Option<Self> {
         let token = match jsonwebtoken::decode::<JWTAuth>(
-                    &dec,
-                    &jsonwebtoken::DecodingKey::from_secret(&key.0),
-                    &jsonwebtoken::Validation::default(),
-                ) {
-            Err(_) => { return None; },
-            Ok(t) => if t.claims.is_valid() { Some(t) } else { None }
+            &dec,
+            &jsonwebtoken::DecodingKey::from_secret(&key.0),
+            &jsonwebtoken::Validation::default(),
+        ) {
+            Err(_) => {
+                return None;
+            }
+            Ok(t) => {
+                if t.claims.is_valid() {
+                    Some(t)
+                } else {
+                    None
+                }
+            }
         };
 
         Some(token.unwrap().claims)
     }
 
     pub fn encode(&self, key: Key) -> String {
-        
-
         jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),
             &self,
@@ -74,50 +80,53 @@ impl JWTAuth {
 pub enum Authorization {
     Session(String),
     ApiKey(Uuid),
-    None
+    None,
 }
 
 impl Authorization {
     pub fn parse(s: Option<String>) -> Self {
         match s {
-            Some(s) => {
-                match Uuid::parse_str(&s) {
-                    Ok(uuid) => Self::ApiKey(uuid),
-                    Err(_) => Self::Session(s)
-                }
+            Some(s) => match Uuid::parse_str(&s) {
+                Ok(uuid) => Self::ApiKey(uuid),
+                Err(_) => Self::Session(s),
             },
-            None => Self::None
+            None => Self::None,
         }
     }
 
-    pub async fn get_user(&self, db: &DatabaseConnection) -> Option<entity::users::Model> {
+    pub async fn get_user(&self, db: &PgPool) -> Option<models::dUser> {
         match self {
             Self::Session(s) => {
                 let auth = JWTAuth::decode(s.to_string(), *KEY.clone());
                 match auth {
                     Some(auth) => {
-                        let user = entity::users::Entity::find_by_id(auth.user.id)
-                            .one(db)
-                            .await
-                            .unwrap()
-                            .unwrap();
+                        let user = sqlx::query_as!(
+                            models::dUser,
+                            "SELECT * FROM users WHERE id = $1",
+                            auth.user.id
+                        )
+                        .fetch_one(db)
+                        .await
+                        .unwrap();
 
                         Some(user)
-                    },
-                    None => None
+                    }
+                    None => None,
                 }
-            },
+            }
             Self::ApiKey(uuid) => {
-                let user = entity::users::Entity::find()
-                    .filter(entity::users::Column::ApiKey.eq(sea_orm::prelude::Uuid::from_bytes(*uuid.as_bytes())))
-                    .one(db)
-                    .await
-                    .unwrap()
-                    .unwrap();
+                let user = sqlx::query_as!(
+                    models::dUser,
+                    "SELECT * FROM users WHERE api_key = $1",
+                    sqlx::types::Uuid::from_bytes(*uuid.as_bytes())
+                )
+                .fetch_one(db)
+                .await
+                .unwrap();
 
                 Some(user)
-            },
-            _ => None
+            }
+            _ => None,
         }
     }
 }
@@ -132,7 +141,7 @@ impl HasPermissions for &User {
     }
 }
 
-impl HasPermissions for &entity::users::Model {
+impl HasPermissions for &models::dUser {
     fn permissions(&self) -> i32 {
         self.permissions
     }
@@ -144,7 +153,7 @@ impl HasPermissions for &mut User {
     }
 }
 
-impl HasPermissions for &mut entity::users::Model {
+impl HasPermissions for &mut models::dUser {
     fn permissions(&self) -> i32 {
         self.permissions
     }
@@ -156,7 +165,7 @@ impl HasPermissions for User {
     }
 }
 
-impl HasPermissions for entity::users::Model {
+impl HasPermissions for models::dUser {
     fn permissions(&self) -> i32 {
         self.permissions
     }

@@ -1,17 +1,22 @@
-use async_graphql::{SimpleObject, FieldResult, FieldError, Error};
+use async_graphql::{Error, FieldError, FieldResult, SimpleObject};
 use chrono::{DateTime, Utc};
-use entity::prelude::*;
-use poem::{handler, web::{Query, Json}, Response, Request, IntoResponse, http::StatusCode};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set, DatabaseConnection};
+use poem::{
+    handler,
+    http::StatusCode,
+    web::{Json, Query},
+    IntoResponse, Request, Response,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sqlx::PgPool;
 use tracing::debug;
 use uuid::Uuid;
 
 use crate::{
     auth::{validate_permissions, Authorization, JWTAuth, Permission},
+    models,
     mods::{self, Mod},
-    KEY, DB_POOL
+    DB_POOL, KEY,
 };
 
 #[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
@@ -38,7 +43,7 @@ pub struct User {
 }
 
 impl User {
-    async fn from_db_user(db: &DatabaseConnection, u: entity::users::Model) -> Result<Self, FieldError> {
+    async fn from_db_user(db: &PgPool, u: models::dUser) -> Result<Self, FieldError> {
         Ok(User {
             id: Uuid::from_bytes(*u.id.as_bytes()),
             github_id: u.github_id.to_string(),
@@ -60,19 +65,27 @@ impl User {
 }
 
 pub async fn find_all(
-    db: &DatabaseConnection,
+    db: &PgPool,
     limit: i32,
     offset: i32,
     auth: Authorization,
 ) -> FieldResult<Vec<User>> {
-    let limit = limit as u64;
-    let offset = offset as u64;
+    let limit = limit as i64;
+    let offset = offset as i64;
 
-    let users = Users::find()
-        .limit(Some(limit))
-        .offset(Some(offset))
-        .all(db)
-        .await?;
+    // let users = Users::find()
+    //     .limit(Some(limit))
+    //     .offset(Some(offset))
+    //     .all(db)
+    //     .await?;
+    let users = sqlx::query_as!(
+        models::dUser,
+        "SELECT * FROM users LIMIT $1 OFFSET $2",
+        limit,
+        offset
+    )
+    .fetch_all(db)
+    .await?;
 
     let auser = auth.get_user(db).await;
 
@@ -95,7 +108,9 @@ pub async fn find_all(
             users
                 .iter_mut()
                 .map(move |user| async move {
-                    if usr.id.as_bytes() != user.id.as_bytes() && !validate_permissions(user.clone(), Permission::VIEW_OTHER).await {
+                    if usr.id.as_bytes() != user.id.as_bytes()
+                        && !validate_permissions(user.clone(), Permission::VIEW_OTHER).await
+                    {
                         user.email = None;
                         user.api_key = None;
                     }
@@ -115,19 +130,24 @@ pub async fn find_all(
         )
         .await;
     }
-    
+
     Ok(users)
 }
 
-pub async fn find_by_id(db: &DatabaseConnection, _id: Uuid, auth: Authorization) -> FieldResult<User> {
-    let id = sea_orm::prelude::Uuid::from_bytes(*_id.as_bytes());
+pub async fn find_by_id(db: &PgPool, _id: Uuid, auth: Authorization) -> FieldResult<User> {
+    // let id = sea_orm::prelude::Uuid::from_bytes(*_id.as_bytes());
 
-    let user = Users::find_by_id(id).one(db).await?;
+    // let user = Users::find_by_id(id).one(db).await?;
+    let user = sqlx::query_as!(
+        models::dUser,
+        "SELECT * FROM users WHERE id = $1",
+        sqlx::types::Uuid::from_bytes(*_id.as_bytes())
+    )
+    .fetch_optional(db)
+    .await?;
 
     if user.is_none() {
-        return Err(Error::new(
-            "User not found"
-        ));
+        return Err(Error::new("User not found"));
     }
 
     let mut user = User::from_db_user(db, user.unwrap()).await?;
@@ -135,7 +155,9 @@ pub async fn find_by_id(db: &DatabaseConnection, _id: Uuid, auth: Authorization)
     // check auth
     let auser = auth.get_user(db).await;
     if let Some(usr) = auser {
-        if usr.id.as_bytes() != user.id.as_bytes() && !validate_permissions(&user, Permission::VIEW_OTHER).await {
+        if usr.id.as_bytes() != user.id.as_bytes()
+            && !validate_permissions(&user, Permission::VIEW_OTHER).await
+        {
             user.email = None;
             user.api_key = None;
         }
@@ -156,7 +178,7 @@ pub async fn user_auth(
     // info: web::Query<UserAuthReq>,
     Query(UserAuthReq { code }): Query<UserAuthReq>,
 ) -> impl IntoResponse {
-    let db = DB_POOL.get().unwrap().clone();
+    let db = DB_POOL.get().unwrap();
 
     let gat = minreq::post("https://github.com/login/oauth/access_token")
         .with_header("User-Agent", "forge-registry")
@@ -183,36 +205,69 @@ pub async fn user_auth(
     debug!("{}", github_user.as_str().unwrap());
     let github_user = serde_json::from_str::<GithubUser>(github_user.as_str().unwrap()).unwrap();
 
-    let mby_user = Users::find()
-        .filter(entity::users::Column::GithubId.eq(github_user.id as i32))
-        .one(&db)
+    // let mby_user = Users::find()
+    //     .filter(entity::users::Column::GithubId.eq(github_user.id as i32))
+    //     .one(&db)
+    //     .await
+    //     .unwrap();
+
+    // if mby_user.is_none() {
+    //     let usr = entity::users::ActiveModel {
+    //         github_id: Set(github_user.id as i32),
+    //         username: Set(github_user.login),
+    //         email: Set(github_user.email.unwrap_or("".to_string())),
+    //         bio: Set(github_user.bio),
+    //         avatar: Set(github_user.avatar_url),
+    //         permissions: Set(7),
+    //         ..Default::default()
+    //     };
+
+    //     Users::insert(usr).exec(&db).await.unwrap();
+    // }
+
+    // let user = Users::find()
+    //     .filter(entity::users::Column::GithubId.eq(github_user.id as i32))
+    //     .one(&db)
+    //     .await
+    //     .unwrap()
+    //     .unwrap();
+
+    let user = sqlx::query_as!(
+        models::dUser,
+        "SELECT * FROM users WHERE github_id = $1",
+        github_user.id as i32
+    )
+    .fetch_optional(db)
+    .await
+    .unwrap();
+
+    if user.is_none() {
+        sqlx::query!(
+            "INSERT INTO users (github_id, username, email, bio, avatar, permissions) VALUES ($1, $2, $3, $4, $5, $6)",
+            github_user.id as i32,
+            github_user.login.clone(),
+            github_user.email.unwrap_or("".to_string()),
+            github_user.bio,
+            github_user.avatar_url,
+            7
+        )
+        .execute(db)
         .await
         .unwrap();
-
-    if mby_user.is_none() {
-        let usr = entity::users::ActiveModel {
-            github_id: Set(github_user.id as i32),
-            username: Set(github_user.login),
-            email: Set(github_user.email.unwrap_or("".to_string())),
-            bio: Set(github_user.bio),
-            avatar: Set(github_user.avatar_url),
-            permissions: Set(7),
-            ..Default::default()
-        };
-
-        Users::insert(usr).exec(&db).await.unwrap();
     }
 
-    let user = Users::find()
-        .filter(entity::users::Column::GithubId.eq(github_user.id as i32))
-        .one(&db)
-        .await
-        .unwrap()
-        .unwrap();
+    let user = sqlx::query_as!(
+        models::dUser,
+        "SELECT * FROM users WHERE github_id = $1",
+        github_user.id as i32
+    )
+    .fetch_one(db)
+    .await
+    .unwrap();
 
     let jwt = JWTAuth::new(user).encode(*KEY.clone());
 
-   Json(json!({ "jwt": jwt }))
+    Json(json!({ "jwt": jwt }))
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -225,9 +280,7 @@ pub struct GithubUser {
 }
 
 #[handler]
-pub async fn get_me(
-    req: &Request
-) -> impl IntoResponse {
+pub async fn get_me(req: &Request) -> impl IntoResponse {
     let db = DB_POOL.get().unwrap().clone();
 
     let auth = req
@@ -238,11 +291,13 @@ pub async fn get_me(
         .unwrap();
     let auser;
     if auth.starts_with("Bearer") {
-        let auth = Authorization::parse(Some(auth.split(" ").collect::<Vec<_>>()[1].to_string()));
+        let auth = Authorization::parse(Some(auth.split(' ').collect::<Vec<_>>()[1].to_string()));
         let user = auth.get_user(&db).await.unwrap();
         auser = user;
     } else {
-        return Response::builder().status(StatusCode::UNAUTHORIZED).body("Unauthorized");
+        return Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .body("Unauthorized");
     }
 
     Json(auser).into_response()

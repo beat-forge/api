@@ -1,4 +1,4 @@
-use std::{io, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use async_graphql::{
     http::{playground_source, GraphQLPlaygroundConfig, GraphiQLSource},
@@ -7,22 +7,19 @@ use async_graphql::{
 use async_graphql_poem::GraphQL;
 use cached::async_sync::OnceCell;
 use meilisearch_sdk::settings::Settings;
-use poem::{
-    get, handler, listener::TcpListener, post, IntoResponse, Response,
-    Route,
-};
+use poem::{get, handler, listener::TcpListener, post, IntoResponse, Response, Route};
 use rand::Rng;
-use sea_orm::{DatabaseConnection, EntityTrait, PaginatorTrait};
-use sqlx::{PgPool, postgres::PgPoolOptions, migrate::Migrator};
+use sqlx::{migrate::Migrator, postgres::PgPoolOptions, PgPool};
 use tracing::log::info;
 
 mod auth;
 mod cdn;
+mod models;
 mod mods;
 mod schema;
 mod users;
 mod versions;
-mod entities;
+mod search;
 
 use crate::schema::Query;
 
@@ -89,8 +86,22 @@ pub static MIGRATOR: Migrator = sqlx::migrate!();
 async fn index() -> impl IntoResponse {
     let db = DB_POOL.get().unwrap().clone();
 
-    let user_count = entity::users::Entity::find().count(&db).await.unwrap();
-    let mod_count = entity::mods::Entity::find().count(&db).await.unwrap();
+    // let user_count = entity::users::Entity::find().count(&db).await.unwrap();
+    // let mod_count = entity::mods::Entity::find().count(&db).await.unwrap();
+
+    let user_count = sqlx::query!("SELECT COUNT(*) FROM users")
+        .fetch_one(&db)
+        .await
+        .unwrap()
+        .count
+        .unwrap_or(0) as i32;
+
+    let mod_count = sqlx::query!("SELECT COUNT(*) FROM mods")
+        .fetch_one(&db)
+        .await
+        .unwrap()
+        .count
+        .unwrap_or(0) as i32;
 
     let mut res = String::new();
     res.push_str("<!DOCTYPE html><html><body style=\"background-color: #18181b; color: #ffffff\">");
@@ -105,8 +116,8 @@ async fn index() -> impl IntoResponse {
 
     res.push_str("<br>");
 
-    res.push_str(&format!("<p><a href=\"graphiql\">GraphiQL</a></p>"));
-    res.push_str(&format!("<p><a href=\"playground\">Playground</a></p>"));
+    res.push_str("<p><a href=\"graphiql\">GraphiQL</a></p>");
+    res.push_str("<p><a href=\"playground\">Playground</a></p>");
 
     res.push_str("<br>");
 
@@ -131,26 +142,31 @@ async fn main() -> anyhow::Result<()> {
     let _ = std::fs::create_dir(Path::new("./data/cdn"));
 
     let pool = PgPoolOptions::new()
-    .min_connections(5)
-    .max_connections(20)
-    .connect(&std::env::var("DATABASE_URL").unwrap()).await?;
+        .min_connections(5)
+        .max_connections(20)
+        .connect(&std::env::var("DATABASE_URL").unwrap())
+        .await?;
 
     DB_POOL.set(pool.clone()).unwrap();
 
     //migrate
     MIGRATOR.run(&pool).await?;
 
-    if !std::env::var("NO_MEILI").unwrap_or("false".to_string()).parse::<bool>().unwrap_or(false) {
+    if !std::env::var("NO_MEILI")
+        .unwrap_or("false".to_string())
+        .parse::<bool>()
+        .unwrap_or(false)
+    {
         // set meilisearch settings
         let client = meilisearch_sdk::client::Client::new(
             std::env::var("MEILI_URL").unwrap(),
             Some(std::env::var("MEILI_KEY").unwrap()),
         );
-    
+
         let settings = Settings::new()
-            .with_filterable_attributes(&["category", "supported_versions"])
-            .with_searchable_attributes(&["name", "description"])
-            .with_sortable_attributes(&["stats.downloads", "created_at", "updated_at"]);
+            .with_filterable_attributes(["category", "supported_versions"])
+            .with_searchable_attributes(["name", "description"])
+            .with_sortable_attributes(["stats.downloads", "created_at", "updated_at"]);
         client
             .index(format!(
                 "{}_mods",
@@ -163,19 +179,15 @@ async fn main() -> anyhow::Result<()> {
         MEILI_CONN.set(client).unwrap();
     }
 
+    let schema = Schema::build(Query, EmptyMutation, EmptySubscription)
+        .data(pool)
+        .finish();
+
     let app = Route::new()
         .at(
             "/graphql",
-            get(GraphQL::new(Schema::new(
-                Query,
-                EmptyMutation,
-                EmptySubscription,
-            )))
-            .post(GraphQL::new(Schema::new(
-                Query,
-                EmptyMutation,
-                EmptySubscription,
-            ))),
+            get(GraphQL::new(schema.clone()))
+            .post(GraphQL::new(schema)),
         )
         .at("/graphiql", get(graphiql_route))
         .at("/playground", get(playground_route))
