@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM users WHERE github_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "github_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "bio",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "avatar",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "banner",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "permissions",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "api_key",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0e296214c9a145bb4f54927f61837c9606e74dbe534d962b0ace5cd0eb0c062d"
+}

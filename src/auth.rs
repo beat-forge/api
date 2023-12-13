@@ -1,9 +1,9 @@
-use chrono::{DateTime, Utc};
-use sea_orm::{EntityTrait, QueryFilter, ColumnTrait, DatabaseConnection};
-use serde::{Serialize, Deserialize};
+use chrono::{DateTime, Utc, NaiveDateTime};
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{Database, KEY, Key, users::User};
+use crate::{models, users::User, Key, KEY};
 
 bitflags::bitflags! {
     pub struct Permission: i32 {
@@ -22,8 +22,43 @@ bitflags::bitflags! {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct JWTUser {
+    pub id: Uuid,
+    pub github_id: i32,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub email: String,
+    pub bio: Option<String>,
+    pub avatar: Option<String>,
+    pub banner: Option<String>,
+    pub permissions: i32,
+    pub api_key: Uuid,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+impl From<models::dUser> for JWTUser {
+    fn from(m: models::dUser) -> Self {
+        Self {
+            id: Uuid::from_bytes(*m.id.as_bytes()),
+            github_id: m.github_id,
+            username: m.username,
+            display_name: m.display_name,
+            email: m.email,
+            bio: m.bio,
+            avatar: m.avatar,
+            banner: m.banner,
+            permissions: m.permissions,
+            api_key: Uuid::from_bytes(*m.api_key.as_bytes()),
+            created_at: m.created_at,
+            updated_at: m.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct JWTAuth {
-    pub user: entity::users::Model,
+    pub user: JWTUser,
     #[serde(with = "chrono::serde::ts_seconds")]
     pub(crate) exp: DateTime<Utc>, // Required (validate_exp defaults to true in validation). Expiration time (as UTC timestamp)
     #[serde(with = "chrono::serde::ts_seconds")]
@@ -31,11 +66,11 @@ pub struct JWTAuth {
 }
 
 impl JWTAuth {
-    pub fn new(user: entity::users::Model) -> Self {
+    pub fn new(user: impl Into<JWTUser>) -> Self {
         let now = Utc::now();
 
         Self {
-            user,
+            user: user.into(),
             exp: now + chrono::Duration::days(1),
             iat: now,
         }
@@ -47,20 +82,26 @@ impl JWTAuth {
 
     pub fn decode(dec: String, key: Key) -> Option<Self> {
         let token = match jsonwebtoken::decode::<JWTAuth>(
-                    &dec,
-                    &jsonwebtoken::DecodingKey::from_secret(&key.0),
-                    &jsonwebtoken::Validation::default(),
-                ) {
-            Err(_) => { return None; },
-            Ok(t) => if t.claims.is_valid() { Some(t) } else { None }
+            &dec,
+            &jsonwebtoken::DecodingKey::from_secret(&key.0),
+            &jsonwebtoken::Validation::default(),
+        ) {
+            Err(_) => {
+                return None;
+            }
+            Ok(t) => {
+                if t.claims.is_valid() {
+                    Some(t)
+                } else {
+                    None
+                }
+            }
         };
 
         Some(token.unwrap().claims)
     }
 
     pub fn encode(&self, key: Key) -> String {
-        
-
         jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),
             &self,
@@ -74,50 +115,53 @@ impl JWTAuth {
 pub enum Authorization {
     Session(String),
     ApiKey(Uuid),
-    None
+    None,
 }
 
 impl Authorization {
     pub fn parse(s: Option<String>) -> Self {
         match s {
-            Some(s) => {
-                match Uuid::parse_str(&s) {
-                    Ok(uuid) => Self::ApiKey(uuid),
-                    Err(_) => Self::Session(s)
-                }
+            Some(s) => match Uuid::parse_str(&s) {
+                Ok(uuid) => Self::ApiKey(uuid),
+                Err(_) => Self::Session(s),
             },
-            None => Self::None
+            None => Self::None,
         }
     }
 
-    pub async fn get_user(&self, db: &DatabaseConnection) -> Option<entity::users::Model> {
+    pub async fn get_user(&self, db: &PgPool) -> Option<models::dUser> {
         match self {
             Self::Session(s) => {
                 let auth = JWTAuth::decode(s.to_string(), *KEY.clone());
                 match auth {
                     Some(auth) => {
-                        let user = entity::users::Entity::find_by_id(auth.user.id)
-                            .one(db)
-                            .await
-                            .unwrap()
-                            .unwrap();
+                        let user = sqlx::query_as!(
+                            models::dUser,
+                            "SELECT * FROM users WHERE id = $1",
+                            sqlx::types::Uuid::from_bytes(*auth.user.id.as_bytes())
+                        )
+                        .fetch_one(db)
+                        .await
+                        .unwrap();
 
                         Some(user)
-                    },
-                    None => None
+                    }
+                    None => None,
                 }
-            },
+            }
             Self::ApiKey(uuid) => {
-                let user = entity::users::Entity::find()
-                    .filter(entity::users::Column::ApiKey.eq(sea_orm::prelude::Uuid::from_bytes(*uuid.as_bytes())))
-                    .one(db)
-                    .await
-                    .unwrap()
-                    .unwrap();
+                let user = sqlx::query_as!(
+                    models::dUser,
+                    "SELECT * FROM users WHERE api_key = $1",
+                    sqlx::types::Uuid::from_bytes(*uuid.as_bytes())
+                )
+                .fetch_one(db)
+                .await
+                .unwrap();
 
                 Some(user)
-            },
-            _ => None
+            }
+            _ => None,
         }
     }
 }
@@ -132,7 +176,7 @@ impl HasPermissions for &User {
     }
 }
 
-impl HasPermissions for &entity::users::Model {
+impl HasPermissions for &models::dUser {
     fn permissions(&self) -> i32 {
         self.permissions
     }
@@ -144,7 +188,7 @@ impl HasPermissions for &mut User {
     }
 }
 
-impl HasPermissions for &mut entity::users::Model {
+impl HasPermissions for &mut models::dUser {
     fn permissions(&self) -> i32 {
         self.permissions
     }
@@ -156,7 +200,7 @@ impl HasPermissions for User {
     }
 }
 
-impl HasPermissions for entity::users::Model {
+impl HasPermissions for models::dUser {
     fn permissions(&self) -> i32 {
         self.permissions
     }

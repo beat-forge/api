@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM mods WHERE (slug = $1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "icon",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "cover",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "author",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "category",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "stats",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 9,
+        "name": "website",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "eff8bfe5f10f151e0b1bd3b8d11d893173312151e959ee82c3387a541cdc4c1a"
+}

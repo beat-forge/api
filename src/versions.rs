@@ -1,15 +1,13 @@
+use async_graphql::*;
 use chrono::{DateTime, Utc};
-use entity::prelude::*;
-use juniper::{
-    FieldError, FieldResult, GraphQLObject,
-};
-use serde::{Serialize, Deserialize};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, DatabaseConnection};
+
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::Database;
+use crate::models;
 
-#[derive(GraphQLObject, Debug, Deserialize, Serialize, Clone)]
+#[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
 pub struct GVersion {
     pub id: Uuid,
     pub mod_id: Uuid,
@@ -21,7 +19,7 @@ pub struct GVersion {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(GraphQLObject, Debug, Deserialize, Serialize, Clone)]
+#[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
 pub struct GVersionStats {
     pub downloads: i32,
     // pub rating: f32,
@@ -29,25 +27,35 @@ pub struct GVersionStats {
 }
 
 impl GVersion {
-    pub async fn from_db_version(
-        db: &DatabaseConnection,
-        v: entity::versions::Model,
-    ) -> Result<Self, FieldError> {
-        let versions = VersionBeatSaberVersions::find()
-            .filter(entity::version_beat_saber_versions::Column::VersionId.eq(v.id))
-            .find_also_related(BeatSaberVersions)
-            .all(db)
-            .await
-            .unwrap()
+    pub async fn from_db_version(db: &PgPool, v: models::dVersion) -> Result<Self, FieldError> {
+        // let versions = VersionBeatSaberVersions::find()
+        //     .filter(entity::version_beat_saber_versions::Column::VersionId.eq(v.id))
+        //     .find_also_related(BeatSaberVersions)
+        //     .all(db)
+        //     .await
+        //     .unwrap()
+        //     .iter()
+        //     .map(|v| v.1.clone().unwrap().ver)
+        //     .collect::<Vec<_>>();
+        let versions = sqlx::query!("SELECT * FROM beat_saber_versions WHERE id IN (SELECT beat_saber_version_id FROM version_beat_saber_versions WHERE version_id = $1)", sqlx::types::Uuid::from_bytes(*v.id.as_bytes()))
+            .fetch_all(db)
+            .await?
             .iter()
-            .map(|v| v.1.clone().unwrap().ver)
+            .map(|v| v.ver.clone())
             .collect::<Vec<_>>();
 
-        let stats = VersionStats::find_by_id(v.stats)
-            .one(db)
-            .await
-            .unwrap()
-            .unwrap();
+        // let stats = VersionStats::find_by_id(v.stats)
+        //     .one(db)
+        //     .await
+        //     .unwrap()
+        //     .unwrap();
+        let stats = sqlx::query_as!(
+            models::dVersionStat,
+            "SELECT * FROM version_stats WHERE id = $1",
+            sqlx::types::Uuid::from_bytes(*v.stats.as_bytes())
+        )
+        .fetch_one(db)
+        .await?;
 
         Ok(GVersion {
             id: Uuid::from_bytes(*v.id.as_bytes()),
@@ -64,14 +72,21 @@ impl GVersion {
     }
 }
 
-pub async fn find_by_mod_id(db: &DatabaseConnection, id: Uuid) -> FieldResult<Vec<GVersion>> {
-    let id = sea_orm::prelude::Uuid::from_bytes(*id.as_bytes());
+pub async fn find_by_mod_id(db: &PgPool, id: Uuid) -> FieldResult<Vec<GVersion>> {
+    // let id = sea_orm::prelude::Uuid::from_bytes(*id.as_bytes());
 
-    let versions = Versions::find()
-        .filter(entity::versions::Column::ModId.eq(id))
-        .all(db)
-        .await
-        .unwrap();
+    // let versions = Versions::find()
+    //     .filter(entity::versions::Column::ModId.eq(id))
+    //     .all(db)
+    //     .await
+    //     .unwrap();
+    let versions = sqlx::query_as!(
+        models::dVersion,
+        "SELECT * FROM versions WHERE mod_id = $1",
+        sqlx::types::Uuid::from_bytes(*id.as_bytes())
+    )
+    .fetch_all(db)
+    .await?;
 
     let mut r = vec![];
     for version in versions {
