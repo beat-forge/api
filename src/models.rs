@@ -4,44 +4,44 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use sqlx::types::Uuid;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct dBeatSaberVersion {
     pub id: Uuid,
     pub ver: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct dCategory {
     pub id: Uuid,
     pub name: String,
     pub description: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct dFkModBeatSaberVersion {
     pub mod_id: Uuid,
     pub beat_saber_version_id: Uuid,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct dModStats {
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct dModStat {
     pub id: Uuid,
     pub downloads: i32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct dVersionStat {
     pub id: Uuid,
     pub downloads: i32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct dFkModVersion {
     pub mod_id: Uuid,
     pub version_id: Uuid,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct dMod {
     pub id: Uuid,
     pub slug: String,
@@ -57,13 +57,13 @@ pub struct dMod {
     pub updated_at: NaiveDateTime,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct dFkUserMod {
     pub user_id: Uuid,
     pub mod_id: Uuid,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct dUser {
     pub id: Uuid,
     pub github_id: i32,
@@ -79,25 +79,25 @@ pub struct dUser {
     pub updated_at: NaiveDateTime,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct dFkVersionBeatSaberVersion {
     pub version_id: Uuid,
     pub beat_saber_version_id: Uuid,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct dVersionConflict {
     pub version_id: Uuid,
     pub dependent: Uuid,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct dVersionDependent {
     pub version_id: Uuid,
     pub dependent: Uuid,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct dVersion {
     pub id: Uuid,
     pub mod_id: Uuid,

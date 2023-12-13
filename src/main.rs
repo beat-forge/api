@@ -19,7 +19,7 @@ mod mods;
 mod schema;
 mod users;
 mod versions;
-// mod search;
+mod search;
 
 use crate::schema::Query;
 

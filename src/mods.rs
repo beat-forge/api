@@ -13,13 +13,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use meilisearch_entity::prelude::*;
-
 use crate::{
     auth::{validate_permissions, Authorization, Permission},
     models,
     versions::{self, GVersion},
-    DB_POOL,
+    DB_POOL, search::{MeiliMod, MeiliUser, MeiliModStats, MeiliVersion},
 };
 
 #[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
@@ -64,7 +62,7 @@ impl Mod {
         .await?
         .clone();
         let stats = sqlx::query_as!(
-            models::dModStats,
+            models::dModStat,
             "SELECT * FROM mod_stats WHERE id = $1",
             m.stats
         )
@@ -715,11 +713,6 @@ pub async fn create_mod(req: &Request, body: Vec<u8>) -> Response {
     .await
     .unwrap();
 
-    let _ = std::fs::create_dir(format!("./data/cdn/{}", &db_mod.id));
-    std::fs::write(format!("./data/cdn/{}/{}.forgemod", &db_mod.id, v_id), body).unwrap();
-
-    trans.commit().await.unwrap();
-
     // add to meilisearch
     let client = meilisearch_sdk::client::Client::new(
         std::env::var("MEILI_URL").unwrap(),
@@ -740,7 +733,7 @@ pub async fn create_mod(req: &Request, body: Vec<u8>) -> Response {
         "SELECT * FROM versions WHERE (mod_id = $1)",
         db_mod.id
     )
-    .fetch_all(&db)
+    .fetch_all(&mut *trans)
     .await
     .unwrap()
     .into_iter()
@@ -756,7 +749,7 @@ pub async fn create_mod(req: &Request, body: Vec<u8>) -> Response {
     //     .into_iter()
     //     .map(|(_, v)| Version::parse(&v.unwrap().ver).unwrap())
     //     .collect::<Vec<_>>();
-    let supported_versions = sqlx::query_as!(models::dBeatSaberVersion, "SELECT * FROM beat_saber_versions WHERE id IN (SELECT beat_saber_version_id FROM mod_beat_saber_versions WHERE mod_id = $1)", db_mod.id).fetch_all(&db).await.unwrap().into_iter().map(|v| Version::parse(&v.ver).unwrap()).collect::<Vec<_>>();
+    let supported_versions = sqlx::query_as!(models::dBeatSaberVersion, "SELECT * FROM beat_saber_versions WHERE id IN (SELECT beat_saber_version_id FROM mod_beat_saber_versions WHERE mod_id = $1)", db_mod.id).fetch_all(&mut *trans).await.unwrap().into_iter().map(|v| Version::parse(&v.ver).unwrap()).collect::<Vec<_>>();
 
     // let mod_stats = ModStats::find_by_id(db_mod.stats)
     //     .one(&db)
@@ -764,16 +757,16 @@ pub async fn create_mod(req: &Request, body: Vec<u8>) -> Response {
     //     .unwrap()
     //     .unwrap();
     let mod_stats = sqlx::query_as!(
-        models::dModStats,
+        models::dModStat,
         "SELECT * FROM mod_stats WHERE id = $1",
         db_mod.stats
     )
-    .fetch_one(&db)
+    .fetch_one(&mut *trans)
     .await
     .unwrap();
 
     let meilimod = MeiliMod {
-        id: db_mod.id,
+        id: Uuid::from_bytes(*db_mod.id.as_bytes()),
         slug: db_mod.slug,
         name: db_mod.name,
         description: db_mod.description.unwrap_or("".to_string()),
@@ -801,6 +794,11 @@ pub async fn create_mod(req: &Request, body: Vec<u8>) -> Response {
         .add_or_replace(&[meilimod], None)
         .await
         .unwrap();
+
+    let _ = std::fs::create_dir(format!("./data/cdn/{}", &db_mod.id));
+    std::fs::write(format!("./data/cdn/{}/{}.forgemod", &db_mod.id, v_id), body).unwrap();
+
+    trans.commit().await.unwrap();
 
     Response::builder()
         .status(StatusCode::CREATED)

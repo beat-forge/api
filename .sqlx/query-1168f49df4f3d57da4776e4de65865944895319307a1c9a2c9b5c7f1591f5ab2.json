@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mod_beat_saber_versions (mod_id, beat_saber_version_id) VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1168f49df4f3d57da4776e4de65865944895319307a1c9a2c9b5c7f1591f5ab2"
+}

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -22,8 +22,43 @@ bitflags::bitflags! {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct JWTUser {
+    pub id: Uuid,
+    pub github_id: i32,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub email: String,
+    pub bio: Option<String>,
+    pub avatar: Option<String>,
+    pub banner: Option<String>,
+    pub permissions: i32,
+    pub api_key: Uuid,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+impl From<models::dUser> for JWTUser {
+    fn from(m: models::dUser) -> Self {
+        Self {
+            id: Uuid::from_bytes(*m.id.as_bytes()),
+            github_id: m.github_id,
+            username: m.username,
+            display_name: m.display_name,
+            email: m.email,
+            bio: m.bio,
+            avatar: m.avatar,
+            banner: m.banner,
+            permissions: m.permissions,
+            api_key: Uuid::from_bytes(*m.api_key.as_bytes()),
+            created_at: m.created_at,
+            updated_at: m.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct JWTAuth {
-    pub user: models::dUser,
+    pub user: JWTUser,
     #[serde(with = "chrono::serde::ts_seconds")]
     pub(crate) exp: DateTime<Utc>, // Required (validate_exp defaults to true in validation). Expiration time (as UTC timestamp)
     #[serde(with = "chrono::serde::ts_seconds")]
@@ -31,11 +66,11 @@ pub struct JWTAuth {
 }
 
 impl JWTAuth {
-    pub fn new(user: models::dUser) -> Self {
+    pub fn new(user: impl Into<JWTUser>) -> Self {
         let now = Utc::now();
 
         Self {
-            user,
+            user: user.into(),
             exp: now + chrono::Duration::days(1),
             iat: now,
         }
@@ -103,7 +138,7 @@ impl Authorization {
                         let user = sqlx::query_as!(
                             models::dUser,
                             "SELECT * FROM users WHERE id = $1",
-                            auth.user.id
+                            sqlx::types::Uuid::from_bytes(*auth.user.id.as_bytes())
                         )
                         .fetch_one(db)
                         .await

@@ -96,4 +96,10 @@ create table if not exists mod_beat_saber_versions(
     beat_saber_version_id uuid not null references beat_saber_versions(id) on update cascade on delete cascade
 );
 
+create table if not exists _meilisearch_migrations(
+	id uuid primary key not null default gen_random_uuid(),
+	name varchar not null unique,
+	created_at timestamp not null default now()
+);
+
 commit;

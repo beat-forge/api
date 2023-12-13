@@ -14,5 +14,6 @@ drop table mod_versions;
 drop table user_mods;
 drop table version_beat_saber_versions;
 drop table mod_beat_saber_versions
+drop table _meilisearch_migrations;
 
 commit;

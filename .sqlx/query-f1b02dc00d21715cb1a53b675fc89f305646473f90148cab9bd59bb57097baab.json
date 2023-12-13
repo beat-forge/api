@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM mod_beat_saber_versions WHERE mod_id = $1 AND beat_saber_version_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mod_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "beat_saber_version_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "f1b02dc00d21715cb1a53b675fc89f305646473f90148cab9bd59bb57097baab"
+}

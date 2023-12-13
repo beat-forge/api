@@ -293,12 +293,12 @@ pub async fn get_me(req: &Request) -> impl IntoResponse {
     if auth.starts_with("Bearer") {
         let auth = Authorization::parse(Some(auth.split(' ').collect::<Vec<_>>()[1].to_string()));
         let user = auth.get_user(&db).await.unwrap();
-        auser = user;
+        auser = User::from_db_user(&db, user).await.unwrap();
     } else {
         return Response::builder()
             .status(StatusCode::UNAUTHORIZED)
             .body("Unauthorized");
     }
 
-    Json(auser).into_response()
+    Json(auser).into_response()     
 }
