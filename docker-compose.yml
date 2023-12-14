@@ -34,3 +34,4 @@ services:
 volumes:
   db-data: null
   beatforge-api-data: null
+  meili-data: null
