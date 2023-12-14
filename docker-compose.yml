@@ -1,0 +1,36 @@
+version: '3.1'
+services:
+  db:
+    image: 'ghcr.io/hydradatabase/hydra:latest'
+    env_file: stack.env
+    restart: always
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - '5432:5432'
+    volumes:
+      - 'db-data:/var/lib/postgresql/data'
+
+  search:
+    image: 'getmeili/meilisearch:v1.5'
+    env_file: stack.env
+    restart: unless-stopped
+    ports:
+      - '7700:7700'
+    volumes:
+      - 'meili-data:/meili_data'
+
+  api:
+    image: 'ghcr.io/beat-forge/api:nightly'
+    env_file: stack.env
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - '8080:8080'
+    volumes:
+      - 'beatforge-api-data:/app/data/'
+      
+volumes:
+  db-data: null
+  beatforge-api-data: null
