@@ -111,8 +111,8 @@ impl Query {
         &self,
         ctx: &Context<'ctx>,
         query: String,
-        #[graphql(validator(maximum = 30))] limit: Option<i32>,
-        offset: Option<i32>,
+        #[graphql(validator(maximum = 30))] page_size: Option<i32>,
+        page: Option<i32>,
         filters: Option<Filters>,
         sort: Option<Sort>,
     ) -> Result<gqlSearchResults> {
@@ -124,8 +124,8 @@ impl Query {
         let mut filter_str = String::new();
         let mut sorts = Vec::new();
         
-        sq.with_limit(limit.unwrap_or(30) as usize);
-        sq.with_offset(offset.unwrap_or(0) as usize);
+        sq.with_hits_per_page(page_size.unwrap_or(10) as usize);
+        sq.with_page(page.unwrap_or(1) as usize);
 
         if let Some(filters) = filters {
             if let Some(version) = &filters.version {
