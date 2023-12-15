@@ -780,11 +780,11 @@ pub async fn create_mod(req: &Request, body: Vec<u8>) -> Response {
         },
         versions: mod_vers
             .into_iter()
-            .map(|v| MeiliVersion { version: v })
+            .map(|v| MeiliVersion { version: v.to_string() })
             .collect(),
         created_at: db_mod.created_at.and_utc().timestamp(),
         updated_at: db_mod.updated_at.and_utc().timestamp(),
-        supported_versions,
+        supported_versions: supported_versions.into_iter().map(|v| v.to_string()).collect(),
     };
     client
         .index(format!(

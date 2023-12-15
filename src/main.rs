@@ -9,6 +9,7 @@ use cached::async_sync::OnceCell;
 use meilisearch_sdk::settings::Settings;
 use poem::{get, handler, listener::TcpListener, post, IntoResponse, Response, Route};
 use rand::Rng;
+use search::MeiliMigrator;
 use sqlx::{migrate::Migrator, postgres::PgPoolOptions, PgPool};
 use tracing::log::info;
 
@@ -152,35 +153,18 @@ async fn main() -> anyhow::Result<()> {
     //migrate
     MIGRATOR.run(&pool).await?;
 
-    if !std::env::var("NO_MEILI")
-        .unwrap_or("false".to_string())
-        .parse::<bool>()
-        .unwrap_or(false)
-    {
-        // set meilisearch settings
-        let client = meilisearch_sdk::client::Client::new(
-            std::env::var("MEILI_URL").unwrap(),
-            Some(std::env::var("MEILI_KEY").unwrap()),
-        );
+    let client = meilisearch_sdk::client::Client::new(
+        std::env::var("MEILI_URL").unwrap(),
+        Some(std::env::var("MEILI_KEY").unwrap()),
+    );
+    
+    MeiliMigrator::new().run(&pool, &client).await?;
 
-        let settings = Settings::new()
-            .with_filterable_attributes(["category", "supported_versions"])
-            .with_searchable_attributes(["name", "description"])
-            .with_sortable_attributes(["stats.downloads", "created_at", "updated_at"]);
-        client
-            .index(format!(
-                "{}_mods",
-                std::env::var("MEILI_PREFIX").unwrap_or("".to_string())
-            ))
-            .set_settings(&settings)
-            .await
-            .unwrap();
-
-        MEILI_CONN.set(client).unwrap();
-    }
+    MEILI_CONN.set(client.clone()).unwrap();
 
     let schema = Schema::build(Query, EmptyMutation, EmptySubscription)
         .data(pool)
+        .data(client)
         .finish();
 
     let app = Route::new()

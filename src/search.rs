@@ -1,3 +1,4 @@
+use async_graphql::SimpleObject;
 use chrono::NaiveDateTime;
 use futures_util::future::join_all;
 use meilisearch_sdk::{Client, Settings};
@@ -9,12 +10,12 @@ use uuid::Uuid;
 
 use crate::models;
 
-#[derive(Serialize, Deserialize)]
+#[derive(SimpleObject, Serialize, Deserialize)]
 pub struct MeiliModStats {
     pub downloads: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(SimpleObject, Serialize, Deserialize)]
 pub struct MeiliMod {
     pub id: Uuid,
     pub slug: String,
@@ -24,46 +25,70 @@ pub struct MeiliMod {
     pub category: String,
     pub author: MeiliUser,
     pub stats: MeiliModStats,
-    pub supported_versions: Vec<Version>,
+    pub supported_versions: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(SimpleObject, Serialize, Deserialize)]
 pub struct MeiliUser {
     pub username: String,
     pub display_name: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(SimpleObject, Serialize, Deserialize)]
 pub struct MeiliVersion {
-    pub version: Version,
+    pub version: String,
 }
 
 #[async_trait]
-trait MeiliMigratior {
+trait MeiliMigration {
     fn time(&self) -> NaiveDateTime;
     fn name(&self) -> &'static str;
-    async fn up(&self, db: &PgPool, client: &Client, prefix: String) -> anyhow::Result<()>;
-    async fn down(&self, db: &PgPool, client: &Client, prefix: String) -> anyhow::Result<()>;
+    async fn up(&self, db: &PgPool, client: &Client) -> anyhow::Result<()>;
+    async fn down(&self, db: &PgPool, client: &Client) -> anyhow::Result<()>;
 }
 
-struct MeiliMigrator {
-    migrations: Vec<Box<dyn MeiliMigratior>>,
+pub struct MeiliMigrator {
+    migrations: Vec<Box<dyn MeiliMigration>>,
 }
 
 impl MeiliMigrator {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            migrations: Vec::new(),
+            migrations: vec![Box::new(CreateIndexMigration)]
         }
+    }
+
+    pub async fn run(&mut self, db: &PgPool, client: &Client) -> anyhow::Result<()> {
+        self.migrations.sort_by(|a, b| a.time().cmp(&b.time()));
+        let mut applied_migrations = sqlx::query!("SELECT * FROM _meilisearch_migrations")
+            .fetch_all(db)
+            .await?;
+
+        for migration in self.migrations.iter() {
+            if applied_migrations.iter().any(|m| m.name == migration.name()) {
+                continue;
+            }
+            println!("Applying migration {}", migration.name());
+            migration.up(db, client).await?;
+            sqlx::query!(
+                "INSERT INTO _meilisearch_migrations (name, created_at) VALUES ($1, $2)",
+                migration.name(),
+                migration.time()
+            )
+            .execute(db)
+            .await?;
+        }
+
+        Ok(())
     }
 }
 
 struct CreateIndexMigration;
 
 #[async_trait]
-impl MeiliMigratior for CreateIndexMigration {
+impl MeiliMigration for CreateIndexMigration {
     fn time(&self) -> NaiveDateTime {
         NaiveDateTime::parse_from_str("2023-12-13 00:06:41.052509", "%Y-%m-%d %H:%M:%S.%f").unwrap()
     }
@@ -72,7 +97,7 @@ impl MeiliMigratior for CreateIndexMigration {
         "CreateIndexMigration"
     }
 
-    async fn up(&self, db: &PgPool, client: &Client, prefix: String) -> anyhow::Result<()> {
+    async fn up(&self, db: &PgPool, client: &Client) -> anyhow::Result<()> {
         let meili_mods = join_all(
             sqlx::query_as!(models::dMod, "SELECT * FROM mods")
                 .fetch_all(db)
@@ -88,7 +113,7 @@ impl MeiliMigratior for CreateIndexMigration {
                     .await?
                     .into_iter()
                     .map(|v| MeiliVersion {
-                        version: Version::parse(&v.version).unwrap(),
+                        version: v.version,
                     })
                     .collect::<Vec<_>>();
 
@@ -153,10 +178,7 @@ impl MeiliMigratior for CreateIndexMigration {
                         stats: MeiliModStats {
                             downloads: stats.downloads as u64,
                         },
-                        supported_versions: supported_versions
-                            .into_iter()
-                            .map(|v| semver::Version::parse(&v).unwrap())
-                            .collect(),
+                        supported_versions,
                         created_at: m.created_at.and_utc().timestamp(),
                         updated_at: m.updated_at.and_utc().timestamp(),
                     })
@@ -172,8 +194,8 @@ impl MeiliMigratior for CreateIndexMigration {
             .with_sortable_attributes(&["stats.downloads", "created_at", "updated_at"]);
         client
             .index(format!(
-                "{}_mods",
-                prefix
+                "{}mods",
+                get_prefix()
             ))
             .set_settings(&settings)
             .await
@@ -181,8 +203,8 @@ impl MeiliMigratior for CreateIndexMigration {
 
         client
             .index(format!(
-                "{}_mods",
-                prefix
+                "{}mods",
+                get_prefix()
             ))
             .add_documents(&meili_mods, None)
             .await
@@ -190,8 +212,16 @@ impl MeiliMigratior for CreateIndexMigration {
         Ok(())
     }
 
-    async fn down(&self, db: &PgPool, client: &Client, prefix: String) -> anyhow::Result<()> {
-        client.index(format!("{}_mods", prefix)).delete().await?;
+    async fn down(&self, db: &PgPool, client: &Client) -> anyhow::Result<()> {
+        client.index(format!("{}mods", get_prefix())).delete().await?;
         Ok(())
     }
+}
+
+pub fn get_prefix() -> String {
+    let mut prefix = std::env::var("MEILI_PREFIX").unwrap_or("".to_string());
+    if !prefix.ends_with("_") {
+        prefix = format!("{}_", prefix);
+    }
+    prefix
 }
