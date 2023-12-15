@@ -119,13 +119,13 @@ impl Query {
         let client = ctx.data::<Client>()?;
         let mods_index = client.index(get_prefix() + "mods");
 
-        let mut query = SearchQuery::new(&mods_index);
+        let mut sq = SearchQuery::new(&mods_index);
     
         let mut filter_str = String::new();
         let mut sorts = Vec::new();
         
-        query.with_limit(limit.unwrap_or(30) as usize);
-        query.with_offset(offset.unwrap_or(0) as usize);
+        sq.with_limit(limit.unwrap_or(30) as usize);
+        sq.with_offset(offset.unwrap_or(0) as usize);
 
         if let Some(filters) = filters {
             if let Some(version) = &filters.version {
@@ -154,15 +154,16 @@ impl Query {
         }
 
         if !filter_str.is_empty() {
-            query.with_filter(&filter_str);
+            sq.with_filter(&filter_str);
         }
 
         if let Some(sort) = sort {
             sorts = sort.sort.into_iter().map(|s| s.to_meili_query()).collect::<Vec<_>>();
-            query.with_sort(&*sorts);
+            sq.with_sort(&*sorts);
         };
 
-        let query = query.build();
+        sq.with_query(&query);
+        let query = sq.build();
 
         let res: SearchResults<MeiliMod> = client.index(get_prefix() + "mods").execute_query(&query).await.unwrap();
 
