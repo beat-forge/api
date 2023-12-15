@@ -107,7 +107,7 @@ pub struct Query;
 #[Object]
 impl Query {
     #[allow(unused_assignments, unused_variables)]
-    async fn search_users<'ctx>(
+    async fn search_mods<'ctx>(
         &self,
         ctx: &Context<'ctx>,
         query: String,
