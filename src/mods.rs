@@ -12,6 +12,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
+use tracing::log::info;
 
 use crate::{
     auth::{validate_permissions, Authorization, Permission},
@@ -221,6 +222,7 @@ pub async fn create_mod(req: &Request, body: Vec<u8>) -> Response {
     let auser;
     if auth.starts_with("Bearer") {
         let auth = Authorization::parse(Some(auth.split(' ').collect::<Vec<_>>()[1].to_string()));
+        // info!("{:?}", auth);
         let user = auth.get_user(&db).await.unwrap();
         if !validate_permissions(&user, Permission::CREATE_MOD).await {
             return Response::builder()
@@ -525,7 +527,7 @@ pub async fn create_mod(req: &Request, body: Vec<u8>) -> Response {
         // .await
         // .unwrap()
         // .id;
-        let db_mod = sqlx::query!("INSERT INTO mods (slug, name, author, description, website, category, stats) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id", forgemod.manifest._id.clone(), manifest.name.clone(), auser.id, manifest.description.clone(), manifest.website.clone(), db_cata.id, mod_stats).fetch_one(&mut *trans).await.unwrap().id;
+        let db_mod = sqlx::query!("INSERT INTO mods (slug, name, author, description, website, category, stats, icon, cover) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id", forgemod.manifest._id.clone(), manifest.name.clone(), auser.id, manifest.description.clone(), manifest.website.clone(), db_cata.id, mod_stats, "", "").fetch_one(&mut *trans).await.unwrap().id;
 
         // entity::user_mods::ActiveModel {
         //     user_id: Set(auser.id),

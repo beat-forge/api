@@ -1,0 +1,20 @@
+[package]
+name = "dummy-data-loader"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.75"
+clap = { version = "4.4.11", features = ["derive"] }
+minreq = { version = "2.11.0", features = ["json-using-serde", "rustls", "https-rustls"] }
+forge-lib = { git = "https://github.com/beat-forge/lib", version = "1.0.0" }
+tokio = { version = "1.35.0", features = ["rt-multi-thread", "macros"] }
+tracing = "0.1.40"
+rand = "0.8.5"
+semver = "1.0.20"
+tracing-subscriber = "0.3.18"
+open = "5.0.1"
+inquire = "0.6.2"
+serde_json = "1.0.108"
