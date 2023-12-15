@@ -18,7 +18,7 @@ use crate::{
     auth::{validate_permissions, Authorization, Permission},
     models,
     versions::{self, GVersion},
-    DB_POOL, search::{MeiliMod, MeiliUser, MeiliModStats, MeiliVersion},
+    DB_POOL, search::{MeiliMod, MeiliUser, MeiliModStats, MeiliVersion, get_prefix},
 };
 
 #[derive(SimpleObject, Debug, Deserialize, Serialize, Clone)]
@@ -791,7 +791,7 @@ pub async fn create_mod(req: &Request, body: Vec<u8>) -> Response {
     client
         .index(format!(
             "{}mods",
-            std::env::var("MEILI_PREFIX").unwrap_or("".to_string())
+            get_prefix()
         ))
         .add_or_replace(&[meilimod], None)
         .await
