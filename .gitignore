@@ -2,3 +2,4 @@
 .env
 data/
 utils/*/target
+firedbg/
