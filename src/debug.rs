@@ -16,9 +16,9 @@ pub async fn handel_debug_flags() -> anyhow::Result<()> {
         .get()
         .ok_or(anyhow::anyhow!("Failed to get DB pool"))?;
 
-    let is_fresh = sqlx::query!(
+    let is_fresh = !sqlx::query!(
         "SELECT * FROM _sqlx_migrations"
-    ).fetch_all(db).await?.is_empty();
+    ).fetch_all(db).await.is_ok_and(|migrations| !migrations.is_empty());
 
     if !is_fresh {
         // check to see if reset flag is set.
