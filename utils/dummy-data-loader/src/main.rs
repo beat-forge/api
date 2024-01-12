@@ -3,10 +3,10 @@ use forge_lib::structs::{
     forgemod::ForgeMod,
     v1::{data, manifest, ManifestBuilder, ManifestV1, ModBuilder},
 };
+use inquire::Text;
 use rand::{distributions::Alphanumeric, Rng};
 use semver::{Version, VersionReq};
-use tracing::{error, info, debug};
-use inquire::Text;
+use tracing::{debug, error, info};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -83,7 +83,10 @@ async fn main() -> anyhow::Result<()> {
         }
         SubCommand::User(user) => {
             info!("Creating new user");
-            info!("User created. Your api key is: {}",create_user(user.github_client_id, args.beatforge_api_url)?);
+            info!(
+                "User created. Your api key is: {}",
+                create_user(user.github_client_id, args.beatforge_api_url)?
+            );
         }
     }
 
@@ -92,15 +95,39 @@ async fn main() -> anyhow::Result<()> {
 
 fn create_user(client_id: String, api_url: String) -> anyhow::Result<String> {
     info!("A page will open in your browser. Please authorize the app and copy the code into the terminal. The code will be at the end of the URL when you are redirected.");
-    let gh_url = format!("https://github.com/login/oauth/authorize?client_id={}&scope=user:email", client_id);
+    let gh_url = format!(
+        "https://github.com/login/oauth/authorize?client_id={}&scope=user:email",
+        client_id
+    );
     open::that(gh_url)?;
-    
+
     let code = Text::new("Enter code: ").prompt()?;
 
-    let res = minreq::post(format!("{}/auth/github?code={}", api_url, code)).send().unwrap();
-    let jwt = res.json::<serde_json::Value>()?.as_object().unwrap().get("jwt").unwrap().as_str().unwrap().to_string();
-    let res = minreq::get(format!("{}/me", api_url)).with_header("Authorization", format!("Bearer {}", jwt)).send().unwrap();
-    Ok(res.json::<serde_json::Value>()?.as_object().unwrap().get("api_key").unwrap().as_str().unwrap().to_string())
+    let res = minreq::post(format!("{}/auth/github?code={}", api_url, code))
+        .send()
+        .unwrap();
+    let jwt = res
+        .json::<serde_json::Value>()?
+        .as_object()
+        .unwrap()
+        .get("jwt")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
+    let res = minreq::get(format!("{}/me", api_url))
+        .with_header("Authorization", format!("Bearer {}", jwt))
+        .send()
+        .unwrap();
+    Ok(res
+        .json::<serde_json::Value>()?
+        .as_object()
+        .unwrap()
+        .get("api_key")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string())
 }
 
 type ForgeModV1 = ForgeMod<ManifestV1, manifest::Mod, data::Mod>;

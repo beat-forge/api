@@ -3,9 +3,9 @@ use chrono::NaiveDateTime;
 use futures_util::future::join_all;
 use meilisearch_sdk::{Client, Settings};
 use poem::async_trait;
-use semver::Version;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use tracing::{info, error, warn};
 use uuid::Uuid;
 
 use crate::models;
@@ -56,21 +56,24 @@ pub struct MeiliMigrator {
 impl MeiliMigrator {
     pub fn new() -> Self {
         Self {
-            migrations: vec![Box::new(CreateIndexMigration)]
+            migrations: vec![Box::new(CreateIndexMigration)],
         }
     }
 
     pub async fn run(&mut self, db: &PgPool, client: &Client) -> anyhow::Result<()> {
-        self.migrations.sort_by(|a, b| a.time().cmp(&b.time()));
-        let mut applied_migrations = sqlx::query!("SELECT * FROM _meilisearch_migrations")
+        self.migrations.sort_by_key(|a| a.time());
+        let applied_migrations = sqlx::query!("SELECT * FROM _meilisearch_migrations")
             .fetch_all(db)
             .await?;
 
         for migration in self.migrations.iter() {
-            if applied_migrations.iter().any(|m| m.name == migration.name()) {
+            if applied_migrations
+                .iter()
+                .any(|m| m.name == migration.name())
+            {
                 continue;
             }
-            println!("Applying migration {}", migration.name());
+            info!("Applying migration {}", migration.name());
             migration.up(db, client).await?;
             sqlx::query!(
                 "INSERT INTO _meilisearch_migrations (name, created_at) VALUES ($1, $2)",
@@ -90,7 +93,9 @@ struct CreateIndexMigration;
 #[async_trait]
 impl MeiliMigration for CreateIndexMigration {
     fn time(&self) -> NaiveDateTime {
-        NaiveDateTime::parse_from_str("2023-12-13 00:06:41.052509", "%Y-%m-%d %H:%M:%S.%f").unwrap()
+        NaiveDateTime::parse_from_str("2023-12-13 00:06:41.052509", "%Y-%m-%d %H:%M:%S.%f").expect(
+            "Failed to parse a hardcoded date, this should never happen, please report this!"
+        )
     }
 
     fn name(&self) -> &'static str {
@@ -112,9 +117,7 @@ impl MeiliMigration for CreateIndexMigration {
                     .fetch_all(db)
                     .await?
                     .into_iter()
-                    .map(|v| MeiliVersion {
-                        version: v.version,
-                    })
+                    .map(|v| MeiliVersion { version: v.version })
                     .collect::<Vec<_>>();
 
                     let category = sqlx::query_as!(
@@ -141,28 +144,13 @@ impl MeiliMigration for CreateIndexMigration {
                     .fetch_one(db)
                     .await?;
 
-                    let supported_versions = join_all(
-                        sqlx::query!(
-                            "SELECT * FROM mod_beat_saber_versions WHERE mod_id = $1",
-                            sqlx::types::Uuid::from_bytes(*m.id.as_bytes())
-                        )
-                        .fetch_all(db)
-                        .await?
-                        .into_iter()
-                        .map(|v| async move {
-                            sqlx::query_as!(
-                                models::dBeatSaberVersion,
-                                "SELECT * FROM beat_saber_versions WHERE id = $1",
-                                sqlx::types::Uuid::from_bytes(*v.beat_saber_version_id.as_bytes())
-                            )
-                            .fetch_one(db)
-                            .await
-                        }),
-                    )
-                    .await
-                    .into_iter()
-                    .map(|v| v.unwrap().ver)
-                    .collect::<Vec<_>>();
+                    let supported_versions = match join_all(sqlx::query!("SELECT * FROM mod_beat_saber_versions WHERE mod_id = $1",sqlx::types::Uuid::from_bytes(*m.id.as_bytes())).fetch_all(db).await? .into_iter().map(|v|async move{sqlx::query_as!(models::dBeatSaberVersion,"SELECT * FROM beat_saber_versions WHERE id = $1",sqlx::types::Uuid::from_bytes(*v.beat_saber_version_id.as_bytes())).fetch_one(db).await}),).await.into_iter().map(|v|if let Ok(v)=v{Ok(v.ver)}else{Err(anyhow::anyhow!("Invalid version"))}).collect:: <Result<Vec<_> ,_> >() {
+                        Ok(vers) => {vers},
+                        Err(e) => {
+                            warn!("{}", e);
+                            vec![]
+                        },
+                    };
 
                     Ok(MeiliMod {
                         id: Uuid::from_bytes(*m.id.as_bytes()),
@@ -189,38 +177,41 @@ impl MeiliMigration for CreateIndexMigration {
         .collect::<anyhow::Result<Vec<_>>>()?;
 
         let settings = Settings::new()
-            .with_filterable_attributes(&["category, supported_versions"])
-            .with_searchable_attributes(&["name", "description"])
-            .with_sortable_attributes(&["stats.downloads", "created_at", "updated_at"]);
-        client
-            .index(format!(
-                "{}mods",
-                get_prefix()
-            ))
-            .set_settings(&settings)
-            .await
-            .unwrap();
+            .with_filterable_attributes(["category, supported_versions"])
+            .with_searchable_attributes(["name", "description"])
+            .with_sortable_attributes(["stats.downloads", "created_at", "updated_at"]);
+        match client.index(format!("{}mods",get_prefix())).set_settings(&settings).await {
+            Ok(_) => {},
+            Err(e) => {
+                error!("{}", e);
 
-        client
-            .index(format!(
-                "{}mods",
-                get_prefix()
-            ))
-            .add_documents(&meili_mods, None)
-            .await
-            .unwrap();
+                return Err(anyhow::anyhow!("Failed to set settings"));
+            },
+        };
+
+        match client.index(format!("{}mods",get_prefix())).add_documents(&meili_mods,None).await {
+            Ok(_) => {},
+            Err(e) => {
+                error!("{}", e);
+
+                return Err(anyhow::anyhow!("Failed to add documents"));
+            },
+        };
         Ok(())
     }
 
-    async fn down(&self, db: &PgPool, client: &Client) -> anyhow::Result<()> {
-        client.index(format!("{}mods", get_prefix())).delete().await?;
+    async fn down(&self, _db: &PgPool, client: &Client) -> anyhow::Result<()> {
+        client
+            .index(format!("{}mods", get_prefix()))
+            .delete()
+            .await?;
         Ok(())
     }
 }
 
 pub fn get_prefix() -> String {
     let mut prefix = std::env::var("MEILI_PREFIX").unwrap_or("".to_string());
-    if !prefix.ends_with("_") {
+    if !prefix.ends_with('_') {
         prefix = format!("{}_", prefix);
     }
     prefix

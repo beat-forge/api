@@ -3,6 +3,7 @@ use forge_lib::structs::v1::{unpack_v1_forgemod, ForgeModTypes};
 use poem::{handler, http::StatusCode, web::Path, IntoResponse, Response};
 use serde::Deserialize;
 use sqlx::PgPool;
+use tracing::error;
 
 use crate::{models, DB_POOL};
 
@@ -19,24 +20,22 @@ async fn cdn_handler(
     version: String,
     dl_type: CdnType,
 ) -> impl IntoResponse {
-    // let db_mod = Mods::find()
-    //     .filter(entity::mods::Column::Slug.eq(&slug))
-    //     .one(&db)
-    //     .await
-    //     .unwrap();
-    let db_mod = sqlx::query_as!(models::dMod, "SELECT * FROM mods WHERE slug = $1", slug)
+    let db_mod = match sqlx::query_as!(models::dMod, "SELECT * FROM mods WHERE slug = $1", slug)
         .fetch_optional(db)
         .await
-        .unwrap();
+    {
+        Ok(db_mod) => db_mod,
+        Err(e) => {
+            error!("{}", e);
+
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        }
+    };
 
     if let Some(db_mod) = db_mod {
-        // let db_version = Versions::find()
-        //     .filter(entity::versions::Column::ModId.eq(db_mod.id))
-        //     .filter(entity::versions::Column::Version.eq(&version))
-        //     .one(&db)
-        //     .await
-        //     .unwrap();
-        let db_version = sqlx::query_as!(
+        let db_version = match sqlx::query_as!(
             models::dVersion,
             "SELECT * FROM versions WHERE mod_id = $1 AND version = $2",
             db_mod.id,
@@ -44,7 +43,16 @@ async fn cdn_handler(
         )
         .fetch_optional(db)
         .await
-        .unwrap();
+        {
+            Ok(db_version) => db_version,
+            Err(e) => {
+                error!("{}", e);
+
+                return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body("Internal Server Error");
+            }
+        };
 
         if let Some(db_version) = db_version {
             let file = match std::fs::read(format!(
@@ -60,7 +68,16 @@ async fn cdn_handler(
             };
             match dl_type {
                 CdnType::Dll => {
-                    let package = unpack_v1_forgemod(&*file).unwrap();
+                    let package = match unpack_v1_forgemod(&*file) {
+                        Ok(pkg) => pkg,
+                        Err(e) => {
+                            error!("{}", e);
+
+                            return Response::builder()
+                                .status(StatusCode::BAD_REQUEST)
+                                .body("Could not unpack ForgeMod");
+                        }
+                    };
 
                     match package {
                         ForgeModTypes::Mod(m) => {
@@ -104,9 +121,18 @@ pub async fn cdn_get(
     // path: web::Path<(String, String, CdnType)>,
     Path((slug, version, dl_type)): Path<(String, String, CdnType)>,
 ) -> impl IntoResponse {
-    let db = DB_POOL.get().unwrap();
+    let db = match DB_POOL.get() {
+        Some(db) => db,
+        None => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        }
+    };
 
-    cdn_handler(db, slug, version, dl_type).await
+    cdn_handler(db, slug, version, dl_type)
+        .await
+        .into_response()
 }
 
 // #[get("/cdn/{slug}@{version}")]
@@ -116,7 +142,16 @@ pub async fn cdn_get_typeless(
     // path: web::Path<(String, String)>,
     Path((slug, version)): Path<(String, String)>,
 ) -> impl IntoResponse {
-    let db = DB_POOL.get().unwrap();
+    let db = match DB_POOL.get() {
+        Some(db) => db,
+        None => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        }
+    };
 
-    cdn_handler(db, slug, version, CdnType::Package).await
+    cdn_handler(db, slug, version, CdnType::Package)
+        .await
+        .into_response()
 }

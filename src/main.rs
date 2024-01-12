@@ -1,3 +1,5 @@
+#![deny(clippy::unwrap_used, clippy::print_stdout)]
+
 use std::{path::Path, sync::Arc};
 
 use async_graphql::{
@@ -6,21 +8,22 @@ use async_graphql::{
 };
 use async_graphql_poem::GraphQL;
 use cached::async_sync::OnceCell;
-use meilisearch_sdk::settings::Settings;
-use poem::{get, handler, listener::TcpListener, post, IntoResponse, Response, Route};
+use poem::{
+    get, handler, http::StatusCode, listener::TcpListener, post, IntoResponse, Response, Route,
+};
 use rand::Rng;
 use search::MeiliMigrator;
 use sqlx::{migrate::Migrator, postgres::PgPoolOptions, PgPool};
-use tracing::log::info;
+use tracing::{error, info};
 
 mod auth;
 mod cdn;
 mod models;
 mod mods;
 mod schema;
+mod search;
 mod users;
 mod versions;
-mod search;
 
 use crate::schema::Query;
 
@@ -68,12 +71,26 @@ lazy_static::lazy_static! {
             let _ = std::fs::create_dir(Path::new("./data"));
             let mut rng = rand::thread_rng();
             let key: Vec<u8> = (0..1024).map(|_| rng.gen::<u8>()).collect();
-            std::fs::write("./data/secret.key", key).unwrap();
+            #[allow(clippy::panic)]
+            match std::fs::write("./data/secret.key",key) {
+                Ok(_) => {},
+                Err(e) => {
+                    error!("{}", e);
+                    panic!("Failed to write secret key")
+                },
+            };
 
-            println!("Generated secret key (first run)");
+            info!("Generated secret key (first run)");
         }
 
-        Arc::new(Key(std::fs::read("./data/secret.key").unwrap().try_into().unwrap()))
+        #[allow(clippy::panic)]
+        Arc::new(Key(match match std::fs::read("./data/secret.key"){Ok(key)=>key,Err(e)=>{error!("{}",e);panic!("Failed to read secret key")},}.try_into() {
+            Ok(key) => key,
+            Err(_) => {
+                error!("Secret key is not 1024 bytes long, or is corrupt");
+                panic!("Failed to read secret key")
+            },
+        }))
     };
 }
 
@@ -85,24 +102,50 @@ pub static MIGRATOR: Migrator = sqlx::migrate!();
 
 #[handler]
 async fn index() -> impl IntoResponse {
-    let db = DB_POOL.get().unwrap().clone();
+    let db = match DB_POOL.get() {
+        Some(db) => db,
+        None => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        }
+    }
+    .clone();
 
     // let user_count = entity::users::Entity::find().count(&db).await.unwrap();
     // let mod_count = entity::mods::Entity::find().count(&db).await.unwrap();
 
-    let user_count = sqlx::query!("SELECT COUNT(*) FROM users")
+    let user_count = match sqlx::query!("SELECT COUNT(*) FROM users")
         .fetch_one(&db)
         .await
-        .unwrap()
-        .count
-        .unwrap_or(0) as i32;
+    {
+        Ok(record) => record,
+        Err(e) => {
+            error!("{}", e);
 
-    let mod_count = sqlx::query!("SELECT COUNT(*) FROM mods")
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        }
+    }
+    .count
+    .unwrap_or(0) as i32;
+
+    let mod_count = match sqlx::query!("SELECT COUNT(*) FROM mods")
         .fetch_one(&db)
         .await
-        .unwrap()
-        .count
-        .unwrap_or(0) as i32;
+    {
+        Ok(record) => record,
+        Err(e) => {
+            error!("{}", e);
+
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        }
+    }
+    .count
+    .unwrap_or(0) as i32;
 
     let mut res = String::new();
     res.push_str("<!DOCTYPE html><html><body style=\"background-color: #18181b; color: #ffffff\">");
@@ -128,7 +171,7 @@ async fn index() -> impl IntoResponse {
     ));
 
     res.push_str("</body></html>");
-    res
+    res.into_response()
 }
 
 #[tokio::main]
@@ -145,22 +188,22 @@ async fn main() -> anyhow::Result<()> {
     let pool = PgPoolOptions::new()
         .min_connections(5)
         .max_connections(20)
-        .connect(&std::env::var("DATABASE_URL").unwrap())
+        .connect(&std::env::var("DATABASE_URL")?)
         .await?;
 
-    DB_POOL.set(pool.clone()).unwrap();
+    DB_POOL.set(pool.clone())?;
 
     //migrate
     MIGRATOR.run(&pool).await?;
 
     let client = meilisearch_sdk::client::Client::new(
-        std::env::var("MEILI_URL").unwrap(),
-        Some(std::env::var("MEILI_KEY").unwrap()),
+        std::env::var("MEILI_URL")?,
+        Some(std::env::var("MEILI_KEY")?),
     );
-    
+
     MeiliMigrator::new().run(&pool, &client).await?;
 
-    MEILI_CONN.set(client.clone()).unwrap();
+    MEILI_CONN.set(client.clone())?;
 
     let schema = Schema::build(Query, EmptyMutation, EmptySubscription)
         .data(pool)
@@ -170,20 +213,21 @@ async fn main() -> anyhow::Result<()> {
     let app = Route::new()
         .at(
             "/graphql",
-            get(GraphQL::new(schema.clone()))
-            .post(GraphQL::new(schema)),
+            get(GraphQL::new(schema.clone())).post(GraphQL::new(schema)),
         )
         .at("/graphiql", get(graphiql_route))
         .at("/playground", get(playground_route))
         .at("/cdn/:slug@:version/:type", get(cdn::cdn_get))
         .at("/cdn/:slug@:version", get(cdn::cdn_get_typeless))
-        .at("/mods", post(mods::create_mod))
+        .at("/mods", post(mods::upload_mod))
         .at("/auth/github", post(users::user_auth))
         .at("/me", get(users::get_me));
 
     poem::Server::new(TcpListener::bind("0.0.0.0:8080"))
         .run(app)
         .await?;
+
+    info!("Server shutting down ...");
 
     Ok(())
 }

@@ -2,13 +2,13 @@
 
 use async_graphql::*;
 
-use meilisearch_sdk::{Client, SearchQuery, SearchResult, SearchResults};
+use meilisearch_sdk::{Client, SearchQuery, SearchResults};
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::auth::Authorization;
 use crate::mods::Mod;
-use crate::search::{get_prefix, MeiliUser, MeiliMod};
+use crate::search::{get_prefix, MeiliMod};
 use crate::users::User;
 use crate::{mods, users};
 
@@ -39,7 +39,7 @@ enum SortTypes {
 }
 
 impl SortTypes {
-    pub fn to_meili_query(&self) -> &'static str {
+    pub fn as_meili_query(&self) -> &'static str {
         match self {
             SortTypes::DownloadsDesc => "stats.downloads:desc",
             SortTypes::DownloadsAsc => "stats.downloads:asc",
@@ -99,7 +99,7 @@ impl gqlSearchResults {
 #[derive(SimpleObject)]
 struct gqlSearchResult {
     pub result: MeiliMod,
-    pub ranking_score: Option<f64>
+    pub ranking_score: Option<f64>,
 }
 
 pub struct Query;
@@ -120,10 +120,10 @@ impl Query {
         let mods_index = client.index(get_prefix() + "mods");
 
         let mut sq = SearchQuery::new(&mods_index);
-    
+
         let mut filter_str = String::new();
         let mut sorts = Vec::new();
-        
+
         sq.with_hits_per_page(page_size.unwrap_or(10) as usize);
         sq.with_page(page.unwrap_or(1) as usize);
 
@@ -143,7 +143,7 @@ impl Query {
             if let Some(category) = filters.category {
                 match category {
                     CategorySearch::Category(category) => {
-                        if let Some(_) = &filters.version {
+                        if filters.version.is_some() {
                             filter_str = format!("category = \"{}\" AND {}", category, filter_str);
                         } else {
                             filter_str = format!("category = \"{}\"", category);
@@ -158,14 +158,22 @@ impl Query {
         }
 
         if let Some(sort) = sort {
-            sorts = sort.sort.into_iter().map(|s| s.to_meili_query()).collect::<Vec<_>>();
-            sq.with_sort(&*sorts);
+            sorts = sort
+                .sort
+                .into_iter()
+                .map(|s| s.as_meili_query())
+                .collect::<Vec<_>>();
+            sq.with_sort(&sorts);
         };
 
         sq.with_query(&query);
         let query = sq.build();
 
-        let res: SearchResults<MeiliMod> = client.index(get_prefix() + "mods").execute_query(&query).await.unwrap();
+        let res: SearchResults<MeiliMod> = client
+            .index(get_prefix() + "mods")
+            .execute_query(&query)
+            .await
+            ?;
 
         Ok(gqlSearchResults::from_meili_results(res))
     }

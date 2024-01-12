@@ -1,7 +1,5 @@
 #![allow(non_camel_case_types)]
-
 use chrono::NaiveDateTime;
-use serde::{Deserialize, Serialize};
 use sqlx::types::Uuid;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc, NaiveDateTime};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -98,16 +98,15 @@ impl JWTAuth {
             }
         };
 
-        Some(token.unwrap().claims)
+        Some(token?.claims)
     }
 
-    pub fn encode(&self, key: Key) -> String {
+    pub fn encode(&self, key: Key) -> Result<String, jsonwebtoken::errors::Error> {
         jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),
             &self,
             &jsonwebtoken::EncodingKey::from_secret(&key.0),
         )
-        .unwrap()
     }
 }
 
@@ -142,7 +141,7 @@ impl Authorization {
                         )
                         .fetch_one(db)
                         .await
-                        .unwrap();
+                        .ok()?;
 
                         Some(user)
                     }
@@ -157,7 +156,7 @@ impl Authorization {
                 )
                 .fetch_one(db)
                 .await
-                .unwrap();
+                .ok()?;
 
                 Some(user)
             }

@@ -1,7 +1,3 @@
--- Add up migration script here
--- Add migration script here
--- Add up migration script here
--- Add migration script here
 start transaction;
 
 create table if not exists users(

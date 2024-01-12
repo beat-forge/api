@@ -9,7 +9,7 @@ use poem::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
-use tracing::debug;
+use tracing::error;
 use uuid::Uuid;
 
 use crate::{
@@ -53,7 +53,7 @@ impl User {
             bio: u.bio,
             mods: mods::find_by_author(db, Uuid::from_bytes(*u.id.as_bytes()))
                 .await
-                .unwrap(),
+                ?,
             avatar: u.avatar,
             banner: u.banner,
             permissions: u.permissions,
@@ -98,7 +98,7 @@ pub async fn find_all(
     // .await;
     let mut _users = vec![];
     for user in users {
-        _users.push(User::from_db_user(db, user).await.unwrap());
+        _users.push(User::from_db_user(db, user).await?);
     }
 
     let mut users = _users;
@@ -150,8 +150,10 @@ pub async fn find_by_id(db: &PgPool, _id: Uuid, auth: Authorization) -> FieldRes
         return Err(Error::new("User not found"));
     }
 
-    let mut user = User::from_db_user(db, user.unwrap()).await?;
+    let user = user.expect("Should not be none, as it is checked above");
 
+    let mut user = User::from_db_user(db, user).await?;
+    
     // check auth
     let auser = auth.get_user(db).await;
     if let Some(usr) = auser {
@@ -178,32 +180,59 @@ pub async fn user_auth(
     // info: web::Query<UserAuthReq>,
     Query(UserAuthReq { code }): Query<UserAuthReq>,
 ) -> impl IntoResponse {
-    let db = DB_POOL.get().unwrap();
+    let db = match DB_POOL.get() {
+        Some(db) => {db},
+        None => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        },
+    };
 
-    let gat = minreq::post("https://github.com/login/oauth/access_token")
-        .with_header("User-Agent", "forge-registry")
-        .with_json(&json!({
-            "client_id": std::env::var("GITHUB_CLIENT_ID").unwrap(),
-            "client_secret": std::env::var("GITHUB_CLIENT_SECRET").unwrap(),
-            "code": code,
-        }))
-        .unwrap()
-        .send()
-        .unwrap();
+    let gat = match match minreq::post("https://github.com/login/oauth/access_token").with_header("User-Agent","forge-registry").with_json(&json!({"client_id":match std::env::var("GITHUB_CLIENT_ID"){Ok(id)=>{id},Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},},"client_secret":match std::env::var("GITHUB_CLIENT_SECRET"){Ok(secret)=>{secret},Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},},"code":code,})){Ok(req)=>{req},Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},}.send() {
+        Ok(gat) => {gat},
+        Err(e) => {
+            error!("{}",e);
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Invalid Code");
+        },
+    };
 
-    let gat = gat.as_str().unwrap().split('&').collect::<Vec<_>>()[0]
+    let gat = match gat.as_str() {
+        Ok(gat) => {gat},
+        Err(e) => {
+            error!("{}",e);
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        },
+    }.split('&').collect::<Vec<_>>()[0]
         .split('=')
         .collect::<Vec<_>>()[1]
         .to_string();
 
-    let github_user = minreq::get("https://api.github.com/user")
-        .with_header("User-Agent", "forge-registry")
-        .with_header("Authorization", format!("Bearer {}", gat))
-        .send()
-        .unwrap();
+    let github_user = match minreq::get("https://api.github.com/user").with_header("User-Agent","forge-registry").with_header("Authorization",format!("Bearer {}",gat)).send() {Ok(user) => {user},Err(e) => {error!("{}",e); return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},};
 
-    debug!("{}", github_user.as_str().unwrap());
-    let github_user = serde_json::from_str::<GithubUser>(github_user.as_str().unwrap()).unwrap();
+    let github_user = match github_user.as_str() {
+        Ok(user) => {user},
+        Err(e) => {
+            error!("{}",e);
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        },
+    };
+
+    let github_user = match serde_json::from_str:: <GithubUser>(github_user) {
+        Ok(user) => {user},
+        Err(e) => {
+            error!("{}",e);
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Bad response from GitHub. Please try again later.");
+        },
+    };
 
     // let mby_user = Users::find()
     //     .filter(entity::users::Column::GithubId.eq(github_user.id as i32))
@@ -232,42 +261,50 @@ pub async fn user_auth(
     //     .unwrap()
     //     .unwrap();
 
-    let user = sqlx::query_as!(
-        models::dUser,
-        "SELECT * FROM users WHERE github_id = $1",
-        github_user.id as i32
-    )
-    .fetch_optional(db)
-    .await
-    .unwrap();
+    let user = match sqlx::query_as!(models::dUser,"SELECT * FROM users WHERE github_id = $1",github_user.id as i32).fetch_optional(db).await {
+        Ok(record) => {record},
+        Err(e) => {
+            error!("{}",e);
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        },
+    };
 
     if user.is_none() {
-        sqlx::query!(
-            "INSERT INTO users (github_id, username, email, bio, avatar, permissions) VALUES ($1, $2, $3, $4, $5, $6)",
-            github_user.id as i32,
-            github_user.login.clone(),
-            github_user.email.unwrap_or("".to_string()),
-            github_user.bio,
-            github_user.avatar_url,
-            7
-        )
-        .execute(db)
-        .await
-        .unwrap();
+        match sqlx::query!("INSERT INTO users (github_id, username, email, bio, avatar, permissions) VALUES ($1, $2, $3, $4, $5, $6)",github_user.id as i32,github_user.login.clone(),github_user.email.unwrap_or("".to_string()),github_user.bio,github_user.avatar_url,7).execute(db).await {
+            Ok(record) => {record},
+            Err(e) => {
+                error!("{}",e);
+                return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body("Internal Server Error");
+            },
+        };
     }
 
-    let user = sqlx::query_as!(
-        models::dUser,
-        "SELECT * FROM users WHERE github_id = $1",
-        github_user.id as i32
-    )
-    .fetch_one(db)
-    .await
-    .unwrap();
+    let user = match sqlx::query_as!(models::dUser,"SELECT * FROM users WHERE github_id = $1",github_user.id as i32).fetch_one(db).await {
+        Ok(record) => {record},
+        Err(e) => {
+            error!("{}",e);
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        },
+    };
 
-    let jwt = JWTAuth::new(user).encode(*KEY.clone());
+    let jwt = match JWTAuth::new(user).encode(*KEY.clone()) {
+        Ok(jwt) => jwt,
+        Err(e) => {
+            error!("{}", e);
 
-    Json(json!({ "jwt": jwt }))
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        }
+    };
+
+    Json(json!({ "jwt": jwt })).into_response()
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -281,24 +318,52 @@ pub struct GithubUser {
 
 #[handler]
 pub async fn get_me(req: &Request) -> impl IntoResponse {
-    let db = DB_POOL.get().unwrap().clone();
+    let db = match DB_POOL.get() {
+        Some(db) => {
+            db
+        },
+        None => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        },
+    }.clone();
 
-    let auth = req
-        .headers()
-        .get("Authorization")
-        .unwrap()
-        .to_str()
-        .unwrap();
+    let auth = match match req.headers().get("Authorization"){Some(header)=>{header},None=>{return Response::builder().status(StatusCode::UNAUTHORIZED).body("Unauthorized. Missing Authorization header.");},}.to_str() {
+        Ok(auth) => {auth},
+        Err(e) => {
+            error!("{}",e);
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        },
+    };
+
     let auser;
     if auth.starts_with("Bearer") {
         let auth = Authorization::parse(Some(auth.split(' ').collect::<Vec<_>>()[1].to_string()));
-        let user = auth.get_user(&db).await.unwrap();
-        auser = User::from_db_user(&db, user).await.unwrap();
+        let user = match auth.get_user(&db).await {
+            Some(user) => {user},
+            None => {
+                return Response::builder()
+                    .status(StatusCode::UNAUTHORIZED)
+                    .body("Unauthorized");
+            },
+        };
+        auser = match User::from_db_user(&db,user).await {
+            Ok(auser) => {auser},
+            Err(e) => {
+                error!("{}", e.message);
+                return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body("Internal Server Error");
+            },
+        };
     } else {
         return Response::builder()
             .status(StatusCode::UNAUTHORIZED)
             .body("Unauthorized");
     }
 
-    Json(auser).into_response()     
+    Json(auser).into_response()
 }
