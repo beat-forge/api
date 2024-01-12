@@ -14,7 +14,7 @@ use poem::{
 use rand::Rng;
 use search::MeiliMigrator;
 use sqlx::{migrate::Migrator, postgres::PgPoolOptions, PgPool};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 mod auth;
 mod cdn;
@@ -24,6 +24,9 @@ mod schema;
 mod search;
 mod users;
 mod versions;
+
+#[cfg(feature = "debug")]
+mod debug;
 
 use crate::schema::Query;
 
@@ -179,6 +182,13 @@ async fn main() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
     tracing_subscriber::fmt().init();
 
+    info!("{}", text_to_ascii_art::convert("Beat-Forge-API".to_string()).expect("Should not fail as it is a constant, utf-8 string"));
+
+    #[cfg(feature = "debug")]
+    {
+        warn!("THIS IS A DEVELOPMENT BUILD, DO NOT USE IN PRODUCTION");
+    }
+
     info!("starting HTTP server on port 8080");
     info!("GraphiQL playground: http://localhost:8080/graphiql");
     info!("Playground: http://localhost:8080/playground");
@@ -188,22 +198,29 @@ async fn main() -> anyhow::Result<()> {
     let pool = PgPoolOptions::new()
         .min_connections(5)
         .max_connections(20)
-        .connect(&std::env::var("DATABASE_URL")?)
+        .connect(&std::env::var("BF_DATABASE_URL")?)
         .await?;
 
     DB_POOL.set(pool.clone())?;
+    
+    let client = meilisearch_sdk::client::Client::new(
+        std::env::var("BF_MEILI_URL")?,
+        Some(std::env::var("BF_MEILI_KEY")?),
+    );
+
+    MEILI_CONN.set(client.clone())?;
+
+    #[cfg(feature = "debug")]
+    {
+        debug::handel_debug_flags().await?;
+    }
 
     //migrate
     MIGRATOR.run(&pool).await?;
 
-    let client = meilisearch_sdk::client::Client::new(
-        std::env::var("MEILI_URL")?,
-        Some(std::env::var("MEILI_KEY")?),
-    );
 
-    MeiliMigrator::new().run(&pool, &client).await?;
+    MeiliMigrator::new().run(&pool).await?;
 
-    MEILI_CONN.set(client.clone())?;
 
     let schema = Schema::build(Query, EmptyMutation, EmptySubscription)
         .data(pool)

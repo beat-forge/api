@@ -189,7 +189,7 @@ pub async fn user_auth(
         },
     };
 
-    let gat = match match minreq::post("https://github.com/login/oauth/access_token").with_header("User-Agent","forge-registry").with_json(&json!({"client_id":match std::env::var("GITHUB_CLIENT_ID"){Ok(id)=>{id},Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},},"client_secret":match std::env::var("GITHUB_CLIENT_SECRET"){Ok(secret)=>{secret},Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},},"code":code,})){Ok(req)=>{req},Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},}.send() {
+    let gat = match match minreq::post("https://github.com/login/oauth/access_token").with_header("User-Agent","forge-registry").with_json(&json!({"client_id":match std::env::var("BF_GITHUB_CLIENT_ID"){Ok(id)=>{id},Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},},"client_secret":match std::env::var("BF_GITHUB_CLIENT_SECRET"){Ok(secret)=>{secret},Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},},"code":code,})){Ok(req)=>{req},Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},}.send() {
         Ok(gat) => {gat},
         Err(e) => {
             error!("{}",e);

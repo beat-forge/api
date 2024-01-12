@@ -12,7 +12,7 @@ use tracing::{debug, error, info};
 struct Args {
     #[clap(subcommand)]
     subcmd: SubCommand,
-    /// API URL
+    /// API URL. Do not use a trailing slash. Do not use localhost, use 127.0.0.1
     #[clap(long)]
     beatforge_api_url: String,
 }
@@ -22,7 +22,7 @@ enum SubCommand {
     /// Generate random data
     #[clap(name = "random")]
     Random(Random),
-    /// Import data from beatmods
+    /// Import data from beatmods. Unimplemented
     #[clap(name = "import")]
     Import(Import),
     /// Create a new user (use this to get an API key)

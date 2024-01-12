@@ -8,7 +8,7 @@ use sqlx::PgPool;
 use tracing::{info, error, warn};
 use uuid::Uuid;
 
-use crate::models;
+use crate::{models, MEILI_CONN};
 
 #[derive(SimpleObject, Serialize, Deserialize)]
 pub struct MeiliModStats {
@@ -60,7 +60,9 @@ impl MeiliMigrator {
         }
     }
 
-    pub async fn run(&mut self, db: &PgPool, client: &Client) -> anyhow::Result<()> {
+    pub async fn run(&mut self, db: &PgPool) -> anyhow::Result<()> {
+        let client = MEILI_CONN.get().ok_or(anyhow::anyhow!("Failed to get meili client"))?;
+
         self.migrations.sort_by_key(|a| a.time());
         let applied_migrations = sqlx::query!("SELECT * FROM _meilisearch_migrations")
             .fetch_all(db)
@@ -210,7 +212,7 @@ impl MeiliMigration for CreateIndexMigration {
 }
 
 pub fn get_prefix() -> String {
-    let mut prefix = std::env::var("MEILI_PREFIX").unwrap_or("".to_string());
+    let mut prefix = std::env::var("BF_MEILI_PREFIX").unwrap_or("".to_string());
     if !prefix.ends_with('_') {
         prefix = format!("{}_", prefix);
     }

@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM _sqlx_migrations",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "installed_on",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "success",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "checksum",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "execution_time",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f8012aa0f60e1646bc06d7f4ad1a01fb95536bbe23f9a7e54828523795202c4f"
+}

@@ -214,16 +214,6 @@ pub async fn find_by_author(db: &PgPool, author: Uuid) -> FieldResult<Vec<Mod>> 
 
 #[handler]
 pub async fn upload_mod(req: &Request, body: Vec<u8>) -> Response {
-    let db = match DB_POOL.get() {
-        Some(db) => db,
-        None => {
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body("Internal Server Error");
-        }
-    }
-    .clone();
-
     let auth = match match req.headers().get("Authorization") {
         Some(head) => head,
         None => {
@@ -243,6 +233,20 @@ pub async fn upload_mod(req: &Request, body: Vec<u8>) -> Response {
                 .body("Internal Server Error");
         }
     };
+
+    _upload_mod(auth, body).await
+}
+
+pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
+    let db = match DB_POOL.get() {
+        Some(db) => db,
+        None => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body("Internal Server Error");
+        }
+    }
+    .clone();
 
     let auser;
     if auth.starts_with("Bearer") {
@@ -495,7 +499,7 @@ pub async fn upload_mod(req: &Request, body: Vec<u8>) -> Response {
         //     //todo: download url
         //     download_url: Set(format!(
         //         "{}/cdn/{}@{}",
-        //         std::env::var("PUBLIC_URL").unwrap(),
+        //         std::env::var("BF_PUBLIC_URL").unwrap(),
         //         forgemod.manifest._id,
         //         manifest.version.clone().to_string()
         //     )),
@@ -505,7 +509,7 @@ pub async fn upload_mod(req: &Request, body: Vec<u8>) -> Response {
         // .await
         // .unwrap()
         // .id;
-        let version = match sqlx::query!("INSERT INTO versions (mod_id, version, stats, artifact_hash, download_url) VALUES ($1, $2, $3, $4, $5) RETURNING id",db_mod,manifest.version.clone().to_string(),version_stats,"",format!("{}/cdn/{}@{}",match std::env::var("PUBLIC_URL"){Ok(url)=>url,Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},},forgemod.manifest._id,manifest.version.clone().to_string())).fetch_one(&mut*trans).await {
+        let version = match sqlx::query!("INSERT INTO versions (mod_id, version, stats, artifact_hash, download_url) VALUES ($1, $2, $3, $4, $5) RETURNING id",db_mod,manifest.version.clone().to_string(),version_stats,"",format!("{}/cdn/{}@{}",match std::env::var("BF_PUBLIC_URL"){Ok(url)=>url,Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},},forgemod.manifest._id,manifest.version.clone().to_string())).fetch_one(&mut*trans).await {
             Ok(record) => record,
             Err(e) => {
                 error!("{}", e);
@@ -808,7 +812,7 @@ pub async fn upload_mod(req: &Request, body: Vec<u8>) -> Response {
         //     //todo: download url
         //     download_url: Set(format!(
         //         "{}/cdn/{}@{}",
-        //         std::env::var("PUBLIC_URL").unwrap(),
+        //         std::env::var("BF_PUBLIC_URL").unwrap(),
         //         forgemod.manifest._id,
         //         manifest.version.clone().to_string()
         //     )),
@@ -818,7 +822,7 @@ pub async fn upload_mod(req: &Request, body: Vec<u8>) -> Response {
         // .await
         // .unwrap()
         // .id;
-        let version = match sqlx::query!("INSERT INTO versions (mod_id, version, stats, artifact_hash, download_url) VALUES ($1, $2, $3, $4, $5) RETURNING id",db_mod,manifest.version.clone().to_string(),version_stats,"",format!("{}/cdn/{}@{}",match std::env::var("PUBLIC_URL") {
+        let version = match sqlx::query!("INSERT INTO versions (mod_id, version, stats, artifact_hash, download_url) VALUES ($1, $2, $3, $4, $5) RETURNING id",db_mod,manifest.version.clone().to_string(),version_stats,"",format!("{}/cdn/{}@{}",match std::env::var("BF_PUBLIC_URL") {
             Ok(url) => url,
             Err(e) => {
                 error!("{}", e);
@@ -1001,7 +1005,7 @@ pub async fn upload_mod(req: &Request, body: Vec<u8>) -> Response {
 
     // add to meilisearch
     let client = meilisearch_sdk::client::Client::new(
-        match std::env::var("MEILI_URL") {
+        match std::env::var("BF_MEILI_URL") {
             Ok(url) => {url},
             Err(e) => {
                 error!("{}", e);
@@ -1011,7 +1015,7 @@ pub async fn upload_mod(req: &Request, body: Vec<u8>) -> Response {
                     .body("Internal Server Error");
             },
         },
-        Some(match std::env::var("MEILI_KEY") {
+        Some(match std::env::var("BF_MEILI_KEY") {
             Ok(key) => {key},
             Err(e) => {
                 error!("{}", e);
