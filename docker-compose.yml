@@ -2,8 +2,8 @@ version: '3.1'
 services:
   db:
     image: 'ghcr.io/hydradatabase/hydra:latest'
-    env_file: stack.env
-    restart: always
+    env_file: example.env
+    restart: unless-stopped
     environment:
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
@@ -13,7 +13,7 @@ services:
 
   search:
     image: 'getmeili/meilisearch:v1.5'
-    env_file: stack.env
+    env_file: example.env
     restart: unless-stopped
     ports:
       - '7700:7700'
@@ -22,10 +22,11 @@ services:
 
   api:
     image: 'ghcr.io/beat-forge/api:nightly'
-    env_file: stack.env
+    env_file: example.env
     restart: unless-stopped
     depends_on:
       - db
+      - search
     ports:
       - '8080:8080'
     volumes:
