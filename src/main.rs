@@ -1,19 +1,24 @@
 #![deny(clippy::unwrap_used, clippy::print_stdout)]
 
-use std::{path::Path, sync::Arc, f64::consts::E};
+use std::{path::Path, sync::Arc};
 
 use async_graphql::{
     http::{playground_source, GraphQLPlaygroundConfig, GraphiQLSource},
     EmptyMutation, EmptySubscription, Schema,
 };
 use async_graphql_poem::GraphQL;
-use cached::async_sync::OnceCell;
 use poem::{
-    get, handler, http::StatusCode, listener::TcpListener, post, IntoResponse, Response, Route, EndpointExt,
+    get, handler, http::StatusCode, listener::TcpListener, post, EndpointExt, IntoResponse,
+    Response, Route,
 };
 use rand::Rng;
 use search::MeiliMigrator;
-use sqlx::{migrate::Migrator, postgres::{PgPoolOptions, PgConnectOptions}, PgPool, ConnectOptions};
+use sqlx::{
+    migrate::Migrator,
+    postgres::{PgConnectOptions, PgPoolOptions},
+    ConnectOptions, PgPool,
+};
+use tokio::sync::OnceCell;
 use tracing::{error, info, warn};
 use tracing_subscriber::filter;
 
@@ -160,7 +165,10 @@ async fn index() -> impl IntoResponse {
 
     res.push_str("<br>");
 
-    res.push_str(&format!("<p>Currently Serving <a>{}</a> Users and <a>{}</a> Mods.</p>", user_count, mod_count));
+    res.push_str(&format!(
+        "<p>Currently Serving <a>{}</a> Users and <a>{}</a> Mods.</p>",
+        user_count, mod_count
+    ));
 
     res.push_str("<br>");
 
@@ -175,24 +183,30 @@ async fn index() -> impl IntoResponse {
     ));
 
     res.push_str("</body></html>");
-    res.into_response().with_content_type("text/html; charset=utf-8").into_response()
+    res.into_response()
+        .with_content_type("text/html; charset=utf-8")
+        .into_response()
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
-    tracing_subscriber::fmt().with_env_filter(filter::EnvFilter::from_default_env()).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(filter::EnvFilter::from_default_env())
+        .init();
 
-    info!("{}", text_to_ascii_art::convert("Beat-Forge-API".to_string()).expect("Should not fail as it is a constant, utf-8 string"));
+    info!(
+        "{}",
+        text_to_ascii_art::convert("Beat-Forge-API".to_string())
+            .expect("Should not fail as it is a constant, utf-8 string")
+    );
 
     #[cfg(feature = "debug")]
     {
         warn!("THIS IS A DEVELOPMENT BUILD, DO NOT USE IN PRODUCTION");
     }
 
-    info!("starting HTTP server on port 8080");
-    info!("GraphiQL playground: http://localhost:8080/graphiql");
-    info!("Playground: http://localhost:8080/playground");
+    safety_checks();
 
     let _ = std::fs::create_dir(Path::new("./data/cdn"));
 
@@ -206,13 +220,18 @@ async fn main() -> anyhow::Result<()> {
                 Err(e) => {
                     error!("{}", e);
                     return Err(anyhow::anyhow!("Failed to parse database URL"));
-                },
-            }.log_statements(tracing_log::log::LevelFilter::Debug).log_slow_statements(tracing_log::log::LevelFilter::Warn, std::time::Duration::from_millis(500))
+                }
+            }
+            .log_statements(tracing_log::log::LevelFilter::Debug)
+            .log_slow_statements(
+                tracing_log::log::LevelFilter::Warn,
+                std::time::Duration::from_millis(500),
+            ),
         )
         .await?;
 
     DB_POOL.set(pool.clone())?;
-    
+
     let client = meilisearch_sdk::client::Client::new(
         std::env::var("BF_MEILI_URL")?,
         Some(std::env::var("BF_MEILI_KEY")?),
@@ -228,9 +247,7 @@ async fn main() -> anyhow::Result<()> {
     //migrate
     MIGRATOR.run(&pool).await?;
 
-
     MeiliMigrator::new().run(&pool).await?;
-
 
     let schema = Schema::build(Query, EmptyMutation, EmptySubscription)
         .data(pool)
@@ -252,6 +269,10 @@ async fn main() -> anyhow::Result<()> {
         .at("/", get(index))
         .with(poem::middleware::Tracing);
 
+    info!("starting HTTP server on port 8080");
+    info!("GraphiQL playground: http://localhost:8080/graphiql");
+    info!("Playground: http://localhost:8080/playground");
+
     poem::Server::new(TcpListener::bind("0.0.0.0:8080"))
         .run(app)
         .await?;
@@ -259,4 +280,91 @@ async fn main() -> anyhow::Result<()> {
     info!("Server shutting down ...");
 
     Ok(())
+}
+
+#[allow(non_camel_case_types)]
+enum EnvChecks {
+    BF_DATABASE_URL,
+    BF_GITHUB_CLIENT_ID,
+    BF_GITHUB_CLIENT_SECRET,
+    BF_MEILI_URL,
+    BF_MEILI_KEY,
+    BF_PUBLIC_URL,
+    BF_MEILI_PREFIX,
+}
+
+impl std::fmt::Display for EnvChecks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EnvChecks::BF_DATABASE_URL => write!(f, "BF_DATABASE_URL"),
+            EnvChecks::BF_GITHUB_CLIENT_ID => write!(f, "BF_GITHUB_CLIENT_ID"),
+            EnvChecks::BF_GITHUB_CLIENT_SECRET => write!(f, "BF_GITHUB_CLIENT_SECRET"),
+            EnvChecks::BF_MEILI_URL => write!(f, "BF_MEILI_URL"),
+            EnvChecks::BF_MEILI_KEY => write!(f, "BF_MEILI_KEY"),
+            EnvChecks::BF_PUBLIC_URL => write!(f, "BF_PUBLIC_URL"),
+            EnvChecks::BF_MEILI_PREFIX => write!(f, "BF_MEILI_PREFIX"),
+        }
+    }
+}
+
+fn safety_checks() {
+    let checks = [
+        EnvChecks::BF_DATABASE_URL,
+        EnvChecks::BF_GITHUB_CLIENT_ID,
+        EnvChecks::BF_GITHUB_CLIENT_SECRET,
+        EnvChecks::BF_MEILI_URL,
+        EnvChecks::BF_MEILI_KEY,
+        EnvChecks::BF_PUBLIC_URL,
+        EnvChecks::BF_MEILI_PREFIX,
+    ];
+
+    let mut failed_checks = Vec::new();
+
+    for check in checks.iter() {
+        match check {
+            EnvChecks::BF_DATABASE_URL => {
+                if std::env::var("BF_DATABASE_URL").is_err() {
+                    failed_checks.push(check);
+                }
+            }
+            EnvChecks::BF_GITHUB_CLIENT_ID => {
+                if std::env::var("BF_GITHUB_CLIENT_ID").is_err() {
+                    failed_checks.push(check);
+                }
+            }
+            EnvChecks::BF_GITHUB_CLIENT_SECRET => {
+                if std::env::var("BF_GITHUB_CLIENT_SECRET").is_err() {
+                    failed_checks.push(check);
+                }
+            }
+            EnvChecks::BF_MEILI_URL => {
+                if std::env::var("BF_MEILI_URL").is_err() {
+                    failed_checks.push(check);
+                }
+            }
+            EnvChecks::BF_MEILI_KEY => {
+                if std::env::var("BF_MEILI_KEY").is_err() {
+                    failed_checks.push(check);
+                }
+            }
+            EnvChecks::BF_PUBLIC_URL => {
+                if std::env::var("BF_PUBLIC_URL").is_err() {
+                    failed_checks.push(check);
+                }
+            }
+            EnvChecks::BF_MEILI_PREFIX => {
+                if std::env::var("BF_MEILI_PREFIX").is_err() {
+                    failed_checks.push(check);
+                }
+            }
+        }
+    }
+
+    if !failed_checks.is_empty() {
+        error!("The following environment variables are missing:");
+        for check in failed_checks.iter() {
+            error!("{}", check);
+        }
+        panic!("Missing environment variables");
+    }
 }

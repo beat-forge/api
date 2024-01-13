@@ -4,7 +4,7 @@ use forge_lib::structs::{
 };
 use rand::{distributions::Alphanumeric, Rng};
 use semver::{Version, VersionReq};
-use tracing::{info, error, warn};
+use tracing::{info, error};
 
 use crate::{
     mods::_upload_mod,

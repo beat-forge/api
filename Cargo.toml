@@ -18,13 +18,13 @@ debug = []
 # actix-web-lab = "0.20.1"
 chrono = { version = "0.4.31", features = ["serde"] }
 # sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-actix-rustls"] }
-uuid = { version = "0.8", features = ["serde", "v4"] }
+uuid = { version = "1.6", features = ["serde", "v4"] }
 # entity = { path = "./entity" }
 dotenv = "0.15.0"
 futures = "0.3.29"
 serde = { version = "1.0.192", features = ["derive"] }
 bitflags = "2.4.1"
-cached = "0.44.0"
+cached = "0.47"
 jsonwebtoken = "9.1.0"
 rand = "0.8.5"
 minreq = { version = "2.11.0", features = ["serde_json", "json-using-serde", "https-rustls"] }
@@ -37,13 +37,13 @@ once_cell = "1.18.0"
 meilisearch-sdk = "0.24.3"
 # meilisearch-entity = { path = "./meilisearch-entity" }
 tap = "1.0.1"
-async-graphql = { version = "6.0.11", features = ["uuid08", "chrono", "playground", "tracing"] }
+async-graphql = { version = "7", features = ["uuid", "chrono", "playground", "tracing"] }
 tracing = "0.1.40"
 tracing-log = "0.2.0"
 # async-graphql-actix-web = "6.0.11"
 tracing-subscriber = { version = "0.3.18", features = ["chrono", "env-filter", "fmt", "tracing-log"] }
-poem = { version = "1.3.59", features = ["test"] }
-async-graphql-poem = "6.0.11"
+poem = { version = "2", features = ["test"] }
+async-graphql-poem = "7"
 tokio = { version = "1.35.0", features = ["macros", "rt-multi-thread"] }
 sqlx = { version = "0.7.3", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
 anyhow = "1.0.75"
