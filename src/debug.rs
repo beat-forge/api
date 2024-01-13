@@ -4,7 +4,7 @@ use forge_lib::structs::{
 };
 use rand::{distributions::Alphanumeric, Rng};
 use semver::{Version, VersionReq};
-use tracing::{info, error};
+use tracing::{info, error, warn};
 
 use crate::{
     mods::_upload_mod,
@@ -129,7 +129,7 @@ pub async fn generate_mod(api_key: String, slug: Option<String>) -> anyhow::Resu
     if res.status().is_success() {
         Ok(())
     } else {
-        error!("Failed to upload mod. Server returned {}", res.status());
+        error!("{}", res.status());
         Err(anyhow::anyhow!("Failed to upload mod"))
     }
 }

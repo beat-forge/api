@@ -3,7 +3,7 @@ use forge_lib::structs::v1::{unpack_v1_forgemod, ForgeModTypes};
 use poem::{handler, http::StatusCode, web::Path, IntoResponse, Response};
 use serde::Deserialize;
 use sqlx::PgPool;
-use tracing::error;
+use tracing::{warn, error};
 
 use crate::{models, DB_POOL};
 
@@ -26,7 +26,7 @@ async fn cdn_handler(
     {
         Ok(db_mod) => db_mod,
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -71,7 +71,7 @@ async fn cdn_handler(
                     let package = match unpack_v1_forgemod(&*file) {
                         Ok(pkg) => pkg,
                         Err(e) => {
-                            error!("{}", e);
+                            warn!("{}", e);
 
                             return Response::builder()
                                 .status(StatusCode::BAD_REQUEST)

@@ -11,7 +11,7 @@ use poem::{handler, http::StatusCode, Request, Response};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use tracing::error;
+use tracing::{error, warn};
 use uuid::Uuid;
 
 use crate::{
@@ -226,13 +226,14 @@ pub async fn upload_mod(req: &Request, body: Vec<u8>) -> Response {
     {
         Ok(auth) => auth,
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body("Internal Server Error");
         }
     };
+    
 
     _upload_mod(auth, body).await
 }
@@ -283,7 +284,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         let fm = match unpack_v1_forgemod(&*body) {
             Ok(fm) => fm,
             Err(e) => {
-                error!("{}", e);
+                warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
@@ -317,7 +318,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     {
         Ok(cata) => cata,
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -344,7 +345,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         {
             Ok(cata) => cata,
             Err(e) => {
-                error!("{}", e);
+                warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -370,7 +371,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     {
         Ok(vers) => vers,
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -409,7 +410,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     {
         Ok(m) => m,
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -422,7 +423,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     let mut trans = match db.begin().await {
         Ok(trans) => trans,
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -452,7 +453,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             let vm = match sqlx::query_as!(models::dFkModBeatSaberVersion,"SELECT * FROM mod_beat_saber_versions WHERE mod_id = $1 AND beat_saber_version_id = $2",db_mod,v.id).fetch_optional(&mut*trans).await {
                 Ok(vm) => vm,
                 Err(e) => {
-                    error!("{}", e);
+                    warn!("{}", e);
 
                     return Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -464,7 +465,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
                 match sqlx::query!("INSERT INTO mod_beat_saber_versions (mod_id, beat_saber_version_id) VALUES ($1, $2)",db_mod,v.id).execute(&mut*trans).await {
                     Ok(vm) => vm,
                     Err(e) => {
-                        error!("{}", e);
+                        warn!("{}", e);
 
                         return Response::builder()
                             .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -481,7 +482,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             {
                 Ok(record) => record,
                 Err(e) => {
-                    error!("{}", e);
+                    warn!("{}", e);
 
                     return Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -512,7 +513,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         let version = match sqlx::query!("INSERT INTO versions (mod_id, version, stats, artifact_hash, download_url) VALUES ($1, $2, $3, $4, $5) RETURNING id",db_mod,manifest.version.clone().to_string(),version_stats,"",format!("{}/cdn/{}@{}",match std::env::var("BF_PUBLIC_URL"){Ok(url)=>url,Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},},forgemod.manifest._id,manifest.version.clone().to_string())).fetch_one(&mut*trans).await {
             Ok(record) => record,
             Err(e) => {
-                error!("{}", e);
+                warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -532,7 +533,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             match sqlx::query!("INSERT INTO version_beat_saber_versions (version_id, beat_saber_version_id) VALUES ($1, $2)",version,v.id).execute(&mut*trans).await {
                 Ok(_) => {},
                 Err(e) => {
-                    error!("{}", e);
+                    warn!("{}", e);
 
                     return Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -551,7 +552,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         {
             Ok(_) => {}
             Err(e) => {
-                error!("{}", e);
+                warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -578,7 +579,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             {
                 Ok(records) => records,
                 Err(e) => {
-                    error!("{}", e);
+                    warn!("{}", e);
 
                     return Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -613,7 +614,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
                 {
                     Ok(_) => {}
                     Err(e) => {
-                        error!("{}", e);
+                        warn!("{}", e);
 
                         return Response::builder()
                             .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -642,7 +643,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             {
                 Ok(records) => records,
                 Err(e) => {
-                    error!("{}", e);
+                    warn!("{}", e);
 
                     return Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -677,7 +678,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
                 {
                     Ok(_) => {}
                     Err(e) => {
-                        error!("{}", e);
+                        warn!("{}", e);
 
                         return Response::builder()
                             .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -701,7 +702,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         {
             Ok(record) => record,
             Err(e) => {
-                error!("{}", e);
+                warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -727,7 +728,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         let db_mod = match sqlx::query!("INSERT INTO mods (slug, name, author, description, website, category, stats, icon, cover) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",forgemod.manifest._id.clone(),manifest.name.clone(),auser.id,manifest.description.clone(),manifest.website.clone(),db_cata.id,mod_stats,"","").fetch_one(&mut*trans).await {
             Ok(record) => record,
             Err(e) => {
-                error!("{}", e);
+                warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -752,7 +753,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         {
             Ok(_) => {}
             Err(e) => {
-                error!("{}", e);
+                warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -771,7 +772,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             match sqlx::query!("INSERT INTO mod_beat_saber_versions (mod_id, beat_saber_version_id) VALUES ($1, $2)",db_mod,v.id).execute(&mut*trans).await {
                 Ok(_) => {},
                 Err(e) => {
-                    error!("{}", e);
+                    warn!("{}", e);
 
                     return Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -794,7 +795,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             {
                 Ok(record) => record,
                 Err(e) => {
-                    error!("{}", e);
+                    warn!("{}", e);
 
                     return Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -825,7 +826,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         let version = match sqlx::query!("INSERT INTO versions (mod_id, version, stats, artifact_hash, download_url) VALUES ($1, $2, $3, $4, $5) RETURNING id",db_mod,manifest.version.clone().to_string(),version_stats,"",format!("{}/cdn/{}@{}",match std::env::var("BF_PUBLIC_URL") {
             Ok(url) => url,
             Err(e) => {
-                error!("{}", e);
+                warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -834,7 +835,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         },forgemod.manifest._id,manifest.version.clone().to_string())).fetch_one(&mut*trans).await {
             Ok(record) => {record},
             Err(e) => {
-                error!("{}", e);
+                warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -853,7 +854,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             match sqlx::query!("INSERT INTO version_beat_saber_versions (version_id, beat_saber_version_id) VALUES ($1, $2)",version,v.id).execute(&mut*trans).await {
                 Ok(_) => {},
                 Err(e) => {
-                    error!("{}", e);
+                    warn!("{}", e);
 
                     return Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -865,7 +866,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         match sqlx::query!("INSERT INTO mod_versions (mod_id, version_id) VALUES ($1, $2)",db_mod,version).execute(&mut*trans).await {
             Ok(_) => {},
             Err(e) => {
-                error!("{}", e);
+                warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -889,7 +890,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             let c_ver = match sqlx::query!("SELECT * FROM versions WHERE (mod_id = $1)",db_mod).fetch_all(&mut*trans).await {
                 Ok(vers) => {vers},
                 Err(e) => {
-                    error!("{}", e);
+                    warn!("{}", e);
 
                     return Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -917,7 +918,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
                 match sqlx::query!("INSERT INTO version_conflicts (version_id, dependent) VALUES ($1, $2)",version,c.id).execute(&mut*trans).await {
                     Ok(_) => {},
                     Err(e) => {
-                        error!("{}", e);
+                        warn!("{}", e);
 
                         return Response::builder()
                             .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -944,7 +945,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             let d_ver = match sqlx::query!("SELECT * FROM versions WHERE (mod_id = $1)",db_mod).fetch_all(&mut*trans).await {
                 Ok(vers) => {vers},
                 Err(e) => {
-                    error!("{}", e);
+                    warn!("{}", e);
 
                     return Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -972,7 +973,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
                 match sqlx::query!("INSERT INTO version_dependents (version_id, dependent) VALUES ($1, $2)",version,d.id).execute(&mut*trans).await {
                     Ok(_) => {},
                     Err(e) => {
-                        error!("{}", e);
+                        warn!("{}", e);
 
                         return Response::builder()
                             .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -995,7 +996,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     let db_mod = match sqlx::query_as!(models::dMod,"SELECT * FROM mods WHERE (slug = $1)",forgemod.manifest._id.clone()).fetch_one(&mut*trans).await {
         Ok(record) => {record},
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1008,7 +1009,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         match std::env::var("BF_MEILI_URL") {
             Ok(url) => {url},
             Err(e) => {
-                error!("{}", e);
+                warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1018,7 +1019,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         Some(match std::env::var("BF_MEILI_KEY") {
             Ok(key) => {key},
             Err(e) => {
-                error!("{}", e);
+                warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1036,10 +1037,10 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     //     .into_iter()
     //     .map(|(_, v)| Version::parse(&v.unwrap().version).unwrap())
     //     .collect::<Vec<_>>();
-    let mod_vers = match match sqlx::query_as!(models::dVersion,"SELECT * FROM versions WHERE (mod_id = $1)",db_mod.id).fetch_all(&mut*trans).await{Ok(records)=>{records},Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},}.into_iter().map(|v|Version::parse(&v.version)).collect::<Result<Vec<_>, _>>() {
+    let mod_vers = match match sqlx::query_as!(models::dVersion,"SELECT * FROM versions WHERE (mod_id = $1)",db_mod.id).fetch_all(&mut*trans).await{Ok(records)=>{records},Err(e)=>{warn!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},}.into_iter().map(|v|Version::parse(&v.version)).collect::<Result<Vec<_>, _>>() {
         Ok(vers) => {vers},
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1056,10 +1057,10 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     //     .into_iter()
     //     .map(|(_, v)| Version::parse(&v.unwrap().ver).unwrap())
     //     .collect::<Vec<_>>();
-    let supported_versions = match match sqlx::query_as!(models::dBeatSaberVersion,"SELECT * FROM beat_saber_versions WHERE id IN (SELECT beat_saber_version_id FROM mod_beat_saber_versions WHERE mod_id = $1)",db_mod.id).fetch_all(&mut*trans).await{Ok(vers)=>{vers},Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},}.into_iter().map(|v|Version::parse(&v.ver)).collect:: <Result<Vec<_> ,_> >() {
+    let supported_versions = match match sqlx::query_as!(models::dBeatSaberVersion,"SELECT * FROM beat_saber_versions WHERE id IN (SELECT beat_saber_version_id FROM mod_beat_saber_versions WHERE mod_id = $1)",db_mod.id).fetch_all(&mut*trans).await{Ok(vers)=>{vers},Err(e)=>{warn!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},}.into_iter().map(|v|Version::parse(&v.ver)).collect:: <Result<Vec<_> ,_> >() {
         Ok(vers) => {vers},
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1076,7 +1077,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     let mod_stats = match sqlx::query_as!(models::dModStat,"SELECT * FROM mod_stats WHERE id = $1",db_mod.stats).fetch_one(&mut*trans).await {
         Ok(record) => {record},
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1115,7 +1116,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     match client.index(format!("{}mods",get_prefix())).add_or_replace(&[meilimod],None).await {
         Ok(_) => {},
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1129,7 +1130,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         Ok(_) => {},
         Err(e) => {
             if e.kind() != std::io::ErrorKind::AlreadyExists {
-                error!("{}", e);
+                warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1141,7 +1142,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     match std::fs::write(format!("./data/cdn/{}/{}.forgemod", &db_mod.id,v_id),body) {
         Ok(_) => {},
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1152,7 +1153,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     match trans.commit().await {
         Ok(_) => {},
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)

@@ -41,7 +41,7 @@ async-graphql = { version = "6.0.11", features = ["uuid08", "chrono", "playgroun
 tracing = "0.1.40"
 tracing-log = "0.2.0"
 # async-graphql-actix-web = "6.0.11"
-tracing-subscriber = { version = "0.3.18", features = ["chrono", "env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3.18", features = ["chrono", "env-filter", "fmt", "tracing-log"] }
 poem = { version = "1.3.59", features = ["test"] }
 async-graphql-poem = "6.0.11"
 tokio = { version = "1.35.0", features = ["macros", "rt-multi-thread"] }

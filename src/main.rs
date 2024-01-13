@@ -1,6 +1,6 @@
 #![deny(clippy::unwrap_used, clippy::print_stdout)]
 
-use std::{path::Path, sync::Arc};
+use std::{path::Path, sync::Arc, f64::consts::E};
 
 use async_graphql::{
     http::{playground_source, GraphQLPlaygroundConfig, GraphiQLSource},
@@ -9,12 +9,13 @@ use async_graphql::{
 use async_graphql_poem::GraphQL;
 use cached::async_sync::OnceCell;
 use poem::{
-    get, handler, http::StatusCode, listener::TcpListener, post, IntoResponse, Response, Route,
+    get, handler, http::StatusCode, listener::TcpListener, post, IntoResponse, Response, Route, EndpointExt,
 };
 use rand::Rng;
 use search::MeiliMigrator;
-use sqlx::{migrate::Migrator, postgres::PgPoolOptions, PgPool};
+use sqlx::{migrate::Migrator, postgres::{PgPoolOptions, PgConnectOptions}, PgPool, ConnectOptions};
 use tracing::{error, info, warn};
+use tracing_subscriber::filter;
 
 mod auth;
 mod cdn;
@@ -124,7 +125,7 @@ async fn index() -> impl IntoResponse {
     {
         Ok(record) => record,
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -140,7 +141,7 @@ async fn index() -> impl IntoResponse {
     {
         Ok(record) => record,
         Err(e) => {
-            error!("{}", e);
+            warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -159,7 +160,7 @@ async fn index() -> impl IntoResponse {
 
     res.push_str("<br>");
 
-    res.push_str(&format!("<p>Currently Serving <a style=\"color: #ff0000\">{}</a> Users and <a style=\"color: #0000ff\">{}</a> Mods.</p>", user_count, mod_count));
+    res.push_str(&format!("<p>Currently Serving <a>{}</a> Users and <a>{}</a> Mods.</p>", user_count, mod_count));
 
     res.push_str("<br>");
 
@@ -174,13 +175,13 @@ async fn index() -> impl IntoResponse {
     ));
 
     res.push_str("</body></html>");
-    res.into_response()
+    res.into_response().with_content_type("text/html; charset=utf-8").into_response()
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
-    tracing_subscriber::fmt().init();
+    tracing_subscriber::fmt().with_env_filter(filter::EnvFilter::from_default_env()).init();
 
     info!("{}", text_to_ascii_art::convert("Beat-Forge-API".to_string()).expect("Should not fail as it is a constant, utf-8 string"));
 
@@ -198,7 +199,16 @@ async fn main() -> anyhow::Result<()> {
     let pool = PgPoolOptions::new()
         .min_connections(5)
         .max_connections(20)
-        .connect(&std::env::var("BF_DATABASE_URL")?)
+        // .connect(&std::env::var("BF_DATABASE_URL")?)
+        .connect_with(
+            match std::env::var("BF_DATABASE_URL")?.parse::<PgConnectOptions>() {
+                Ok(opt) => opt,
+                Err(e) => {
+                    error!("{}", e);
+                    return Err(anyhow::anyhow!("Failed to parse database URL"));
+                },
+            }.log_statements(tracing_log::log::LevelFilter::Debug).log_slow_statements(tracing_log::log::LevelFilter::Warn, std::time::Duration::from_millis(500))
+        )
         .await?;
 
     DB_POOL.set(pool.clone())?;
@@ -238,7 +248,9 @@ async fn main() -> anyhow::Result<()> {
         .at("/cdn/:slug@:version", get(cdn::cdn_get_typeless))
         .at("/mods", post(mods::upload_mod))
         .at("/auth/github", post(users::user_auth))
-        .at("/me", get(users::get_me));
+        .at("/me", get(users::get_me))
+        .at("/", get(index))
+        .with(poem::middleware::Tracing);
 
     poem::Server::new(TcpListener::bind("0.0.0.0:8080"))
         .run(app)
