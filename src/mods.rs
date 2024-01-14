@@ -1216,7 +1216,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         }
     };
 
-    match std::fs::create_dir(format!("./data/cdn/{}", &db_mod.id)) {
+    match std::fs::create_dir_all(format!("./data/cdn/{}", &db_mod.id)) {
         Ok(_) => {}
         Err(e) => {
             if e.kind() != std::io::ErrorKind::AlreadyExists {

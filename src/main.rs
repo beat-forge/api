@@ -77,7 +77,7 @@ pub struct Key([u8; 1024]);
 lazy_static::lazy_static! {
     pub static ref KEY: Arc<Key> = {
         if !Path::new("./data/secret.key").exists() {
-            let _ = std::fs::create_dir(Path::new("./data"));
+            let _ = std::fs::create_dir_all(Path::new("./data"));
             let mut rng = rand::thread_rng();
             let key: Vec<u8> = (0..1024).map(|_| rng.gen::<u8>()).collect();
             #[allow(clippy::panic)]
@@ -215,7 +215,10 @@ async fn main() -> anyhow::Result<()> {
 
     safety_checks();
 
-    let _ = std::fs::create_dir(Path::new("./data/cdn"));
+    let _ = std::fs::create_dir_all(Path::new("./data/cdn"));
+
+    // force the key to be generated
+    let _ = KEY.clone();
 
     let pool = PgPoolOptions::new()
         .min_connections(5)
