@@ -211,7 +211,7 @@ impl MeiliMigration for CreateIndexMigration {
         .collect::<anyhow::Result<Vec<_>>>()?;
 
         let settings = Settings::new()
-            .with_filterable_attributes(["category, supported_versions"])
+            .with_filterable_attributes(["category", "supported_versions"])
             .with_searchable_attributes(["name", "description"])
             .with_sortable_attributes(["stats.downloads", "created_at", "updated_at"]);
         match client
