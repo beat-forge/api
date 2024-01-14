@@ -1181,6 +1181,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         name: db_mod.name,
         description: db_mod.description.unwrap_or("".to_string()),
         category: db_cata.name,
+        icon: db_mod.icon,
         author: MeiliUser {
             username: auser.username.clone(),
             display_name: auser.display_name.unwrap_or(auser.username),

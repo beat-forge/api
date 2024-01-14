@@ -24,6 +24,7 @@ pub struct MeiliMod {
     pub versions: Vec<MeiliVersion>,
     pub category: String,
     pub author: MeiliUser,
+    pub icon: Option<String>,
     pub stats: MeiliModStats,
     pub supported_versions: Vec<String>,
     pub created_at: i64,
@@ -190,6 +191,7 @@ impl MeiliMigration for CreateIndexMigration {
                         name: m.name,
                         description: m.description.unwrap_or("".to_string()),
                         category: category.name,
+                        icon: m.icon,
                         versions: vers,
                         author: MeiliUser {
                             username: author.username.clone(),
