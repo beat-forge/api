@@ -172,8 +172,7 @@ impl Query {
         let res: SearchResults<MeiliMod> = client
             .index(get_prefix() + "mods")
             .execute_query(&query)
-            .await
-            ?;
+            .await?;
 
         Ok(gqlSearchResults::from_meili_results(res))
     }

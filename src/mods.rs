@@ -214,26 +214,23 @@ pub async fn find_by_author(db: &PgPool, author: Uuid) -> FieldResult<Vec<Mod>> 
 
 #[handler]
 pub async fn upload_mod(req: &Request, body: Vec<u8>) -> Response {
-    let auth = match match req.headers().get("Authorization") {
-        Some(head) => head,
+    let auth = match req.headers().get("Authorization") {
+        Some(head) => match head.to_str() {
+            Ok(auth) => auth,
+            Err(e) => {
+                warn!("{}", e);
+
+                return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body("Internal Server Error");
+            }
+        },
         None => {
             return Response::builder()
                 .status(StatusCode::UNAUTHORIZED)
                 .body("Unauthorized. Missing Authorization header");
         }
-    }
-    .to_str()
-    {
-        Ok(auth) => auth,
-        Err(e) => {
-            warn!("{}", e);
-
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body("Internal Server Error");
-        }
     };
-    
 
     _upload_mod(auth, body).await
 }
@@ -510,7 +507,22 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         // .await
         // .unwrap()
         // .id;
-        let version = match sqlx::query!("INSERT INTO versions (mod_id, version, stats, artifact_hash, download_url) VALUES ($1, $2, $3, $4, $5) RETURNING id",db_mod,manifest.version.clone().to_string(),version_stats,"",format!("{}/cdn/{}@{}",match std::env::var("BF_PUBLIC_URL"){Ok(url)=>url,Err(e)=>{error!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},},forgemod.manifest._id,manifest.version.clone().to_string())).fetch_one(&mut*trans).await {
+        let version = match sqlx::query!("INSERT INTO versions (mod_id, version, stats, artifact_hash, download_url) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+            db_mod,manifest.version.clone().to_string(),
+            version_stats, "", format!("{}/cdn/{}@{}",
+                match std::env::var("BF_PUBLIC_URL") {
+                    Ok(url) => url,
+                    Err(e) => {
+                        error!("{}",e);
+
+                        return Response::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body("Internal Server Error");
+                        }
+                    },
+            forgemod.manifest._id,
+            manifest.version.clone().to_string()
+        )).fetch_one(&mut*trans).await {
             Ok(record) => record,
             Err(e) => {
                 warn!("{}", e);
@@ -518,7 +530,6 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .body("Internal Server Error");
-        
             },
         }.id;
 
@@ -863,15 +874,22 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             };
         }
 
-        match sqlx::query!("INSERT INTO mod_versions (mod_id, version_id) VALUES ($1, $2)",db_mod,version).execute(&mut*trans).await {
-            Ok(_) => {},
+        match sqlx::query!(
+            "INSERT INTO mod_versions (mod_id, version_id) VALUES ($1, $2)",
+            db_mod,
+            version
+        )
+        .execute(&mut *trans)
+        .await
+        {
+            Ok(_) => {}
             Err(e) => {
                 warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .body("Internal Server Error");
-            },
+            }
         };
 
         for conflict in manifest.conflicts {
@@ -887,25 +905,28 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             //             .matches(&Version::parse(&c.version).unwrap())
             //     })
             //     .collect::<Vec<_>>();
-            let c_ver = match sqlx::query!("SELECT * FROM versions WHERE (mod_id = $1)",db_mod).fetch_all(&mut*trans).await {
-                Ok(vers) => {vers},
+            let c_ver = match sqlx::query!("SELECT * FROM versions WHERE (mod_id = $1)", db_mod)
+                .fetch_all(&mut *trans)
+                .await
+            {
+                Ok(vers) => vers,
                 Err(e) => {
                     warn!("{}", e);
 
                     return Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
                         .body("Internal Server Error");
-                },
+                }
             }
-                .into_iter()
-                .filter(|c| {
-                    if let Ok(c) = Version::parse(&c.version) {
-                        conflict.version.matches(&c)
-                    } else {
-                        false
-                    }
-                })
-                .collect::<Vec<_>>();
+            .into_iter()
+            .filter(|c| {
+                if let Ok(c) = Version::parse(&c.version) {
+                    conflict.version.matches(&c)
+                } else {
+                    false
+                }
+            })
+            .collect::<Vec<_>>();
 
             for c in c_ver {
                 // let _ = entity::version_conflicts::ActiveModel {
@@ -915,16 +936,22 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
                 // .insert(&trans)
                 // .await
                 // .unwrap();
-                match sqlx::query!("INSERT INTO version_conflicts (version_id, dependent) VALUES ($1, $2)",version,c.id).execute(&mut*trans).await {
-                    Ok(_) => {},
+                match sqlx::query!(
+                    "INSERT INTO version_conflicts (version_id, dependent) VALUES ($1, $2)",
+                    version,
+                    c.id
+                )
+                .execute(&mut *trans)
+                .await
+                {
+                    Ok(_) => {}
                     Err(e) => {
                         warn!("{}", e);
 
                         return Response::builder()
                             .status(StatusCode::INTERNAL_SERVER_ERROR)
                             .body("Internal Server Error");
-                    
-                    },
+                    }
                 };
             }
         }
@@ -942,25 +969,28 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             //             .matches(&Version::parse(&d.version).unwrap())
             //     })
             //     .collect::<Vec<_>>();
-            let d_ver = match sqlx::query!("SELECT * FROM versions WHERE (mod_id = $1)",db_mod).fetch_all(&mut*trans).await {
-                Ok(vers) => {vers},
+            let d_ver = match sqlx::query!("SELECT * FROM versions WHERE (mod_id = $1)", db_mod)
+                .fetch_all(&mut *trans)
+                .await
+            {
+                Ok(vers) => vers,
                 Err(e) => {
                     warn!("{}", e);
 
                     return Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
                         .body("Internal Server Error");
-                },
+                }
             }
-                .into_iter()
-                .filter(|d| {
-                    if let Ok(d) = Version::parse(&d.version) {
-                        dependent.version.matches(&d)
-                    } else {
-                        false
-                    }
-                })
-                .collect::<Vec<_>>();
+            .into_iter()
+            .filter(|d| {
+                if let Ok(d) = Version::parse(&d.version) {
+                    dependent.version.matches(&d)
+                } else {
+                    false
+                }
+            })
+            .collect::<Vec<_>>();
 
             for d in d_ver {
                 // let _ = entity::version_dependents::ActiveModel {
@@ -970,17 +1000,22 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
                 // .insert(&trans)
                 // .await
                 // .unwrap();
-                match sqlx::query!("INSERT INTO version_dependents (version_id, dependent) VALUES ($1, $2)",version,d.id).execute(&mut*trans).await {
-                    Ok(_) => {},
+                match sqlx::query!(
+                    "INSERT INTO version_dependents (version_id, dependent) VALUES ($1, $2)",
+                    version,
+                    d.id
+                )
+                .execute(&mut *trans)
+                .await
+                {
+                    Ok(_) => {}
                     Err(e) => {
                         warn!("{}", e);
 
                         return Response::builder()
                             .status(StatusCode::INTERNAL_SERVER_ERROR)
                             .body("Internal Server Error");
-                    
-                    
-                    },
+                    }
                 }
             }
         }
@@ -993,38 +1028,45 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     //     .await
     //     .unwrap()
     //     .unwrap();
-    let db_mod = match sqlx::query_as!(models::dMod,"SELECT * FROM mods WHERE (slug = $1)",forgemod.manifest._id.clone()).fetch_one(&mut*trans).await {
-        Ok(record) => {record},
+    let db_mod = match sqlx::query_as!(
+        models::dMod,
+        "SELECT * FROM mods WHERE (slug = $1)",
+        forgemod.manifest._id.clone()
+    )
+    .fetch_one(&mut *trans)
+    .await
+    {
+        Ok(record) => record,
         Err(e) => {
             warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body("Internal Server Error");
-        },
+        }
     };
 
     // add to meilisearch
     let client = meilisearch_sdk::client::Client::new(
         match std::env::var("BF_MEILI_URL") {
-            Ok(url) => {url},
+            Ok(url) => url,
             Err(e) => {
                 warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .body("Internal Server Error");
-            },
+            }
         },
         Some(match std::env::var("BF_MEILI_KEY") {
-            Ok(key) => {key},
+            Ok(key) => key,
             Err(e) => {
                 warn!("{}", e);
 
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .body("Internal Server Error");
-            },
+            }
         }),
     );
 
@@ -1037,15 +1079,36 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     //     .into_iter()
     //     .map(|(_, v)| Version::parse(&v.unwrap().version).unwrap())
     //     .collect::<Vec<_>>();
-    let mod_vers = match match sqlx::query_as!(models::dVersion,"SELECT * FROM versions WHERE (mod_id = $1)",db_mod.id).fetch_all(&mut*trans).await{Ok(records)=>{records},Err(e)=>{warn!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},}.into_iter().map(|v|Version::parse(&v.version)).collect::<Result<Vec<_>, _>>() {
-        Ok(vers) => {vers},
+    let mod_vers = match sqlx::query_as!(
+        models::dVersion,
+        "SELECT * FROM versions WHERE (mod_id = $1)",
+        db_mod.id
+    )
+    .fetch_all(&mut *trans)
+    .await
+    {
+        Ok(records) => {
+            match records
+                .into_iter()
+                .map(|v| Version::parse(&v.version))
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(vers) => vers,
+                Err(e) => {
+                    warn!("{}", e);
+
+                    return Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body("Internal Server Error");
+                }
+            }
+        }
         Err(e) => {
             warn!("{}", e);
-
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body("Internal Server Error");
-        },
+        }
     };
 
     // let supported_versions = ModBeatSaberVersions::find()
@@ -1057,34 +1120,59 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
     //     .into_iter()
     //     .map(|(_, v)| Version::parse(&v.unwrap().ver).unwrap())
     //     .collect::<Vec<_>>();
-    let supported_versions = match match sqlx::query_as!(models::dBeatSaberVersion,"SELECT * FROM beat_saber_versions WHERE id IN (SELECT beat_saber_version_id FROM mod_beat_saber_versions WHERE mod_id = $1)",db_mod.id).fetch_all(&mut*trans).await{Ok(vers)=>{vers},Err(e)=>{warn!("{}",e);return Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body("Internal Server Error");},}.into_iter().map(|v|Version::parse(&v.ver)).collect:: <Result<Vec<_> ,_> >() {
-        Ok(vers) => {vers},
-        Err(e) => {
-            warn!("{}", e);
+    let supported_versions = match sqlx::query_as!(models::dBeatSaberVersion,"SELECT * FROM beat_saber_versions WHERE id IN (SELECT beat_saber_version_id FROM mod_beat_saber_versions WHERE mod_id = $1)",db_mod.id).fetch_all(&mut*trans).await{
+        Ok(vers) => {
+            match vers.into_iter().map(|v|Version::parse(&v.ver)).collect:: <Result<Vec<_> ,_> >() {
+                Ok(vers) => vers,
+                Err(e) => {
+                    warn!("{}",e);
+
+                    return Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body("Internal Server Error");
+                },
+            }
+        },
+        Err(e)=>{
+            warn!("{}",e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body("Internal Server Error");
-    
-        },
-    };
+            }
+        };
+    //     Ok(vers) => {vers},
+    //     Err(e) => {
+    //         warn!("{}", e);
+
+    //         return Response::builder()
+    //             .status(StatusCode::INTERNAL_SERVER_ERROR)
+    //             .body("Internal Server Error");
+
+    //     },
+    // };
 
     // let mod_stats = ModStats::find_by_id(db_mod.stats)
     //     .one(&db)
     //     .await
     //     .unwrap()
     //     .unwrap();
-    let mod_stats = match sqlx::query_as!(models::dModStat,"SELECT * FROM mod_stats WHERE id = $1",db_mod.stats).fetch_one(&mut*trans).await {
-        Ok(record) => {record},
+    let mod_stats = match sqlx::query_as!(
+        models::dModStat,
+        "SELECT * FROM mod_stats WHERE id = $1",
+        db_mod.stats
+    )
+    .fetch_one(&mut *trans)
+    .await
+    {
+        Ok(record) => record,
         Err(e) => {
             warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body("Internal Server Error");
-    
-        
-        },
+        }
     };
 
     let meilimod = MeiliMod {
@@ -1113,21 +1201,23 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
             .map(|v| v.to_string())
             .collect(),
     };
-    match client.index(format!("{}mods",get_prefix())).add_or_replace(&[meilimod],None).await {
-        Ok(_) => {},
+    match client
+        .index(format!("{}mods", get_prefix()))
+        .add_or_replace(&[meilimod], None)
+        .await
+    {
+        Ok(_) => {}
         Err(e) => {
             warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body("Internal Server Error");
-    
-        
-        },
+        }
     };
 
     match std::fs::create_dir(format!("./data/cdn/{}", &db_mod.id)) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
             if e.kind() != std::io::ErrorKind::AlreadyExists {
                 warn!("{}", e);
@@ -1135,30 +1225,29 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .body("Internal Server Error");
-        
             }
-        },
+        }
     };
-    match std::fs::write(format!("./data/cdn/{}/{}.forgemod", &db_mod.id,v_id),body) {
-        Ok(_) => {},
+    match std::fs::write(format!("./data/cdn/{}/{}.forgemod", &db_mod.id, v_id), body) {
+        Ok(_) => {}
         Err(e) => {
             warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body("Internal Server Error");
-        },
+        }
     };
 
     match trans.commit().await {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
             warn!("{}", e);
 
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body("Internal Server Error");
-        },
+        }
     };
 
     Response::builder()

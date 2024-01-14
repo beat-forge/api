@@ -5,7 +5,7 @@ use meilisearch_sdk::{Client, Settings};
 use poem::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use tracing::{info, error, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{models, MEILI_CONN};
@@ -61,7 +61,9 @@ impl MeiliMigrator {
     }
 
     pub async fn run(&mut self, db: &PgPool) -> anyhow::Result<()> {
-        let client = MEILI_CONN.get().ok_or(anyhow::anyhow!("Failed to get meili client"))?;
+        let client = MEILI_CONN
+            .get()
+            .ok_or(anyhow::anyhow!("Failed to get meili client"))?;
 
         self.migrations.sort_by_key(|a| a.time());
         let applied_migrations = sqlx::query!("SELECT * FROM _meilisearch_migrations")
@@ -96,7 +98,7 @@ struct CreateIndexMigration;
 impl MeiliMigration for CreateIndexMigration {
     fn time(&self) -> NaiveDateTime {
         NaiveDateTime::parse_from_str("2023-12-13 00:06:41.052509", "%Y-%m-%d %H:%M:%S.%f").expect(
-            "Failed to parse a hardcoded date, this should never happen, please report this!"
+            "Failed to parse a hardcoded date, this should never happen, please report this!",
         )
     }
 
@@ -146,12 +148,40 @@ impl MeiliMigration for CreateIndexMigration {
                     .fetch_one(db)
                     .await?;
 
-                    let supported_versions = match join_all(sqlx::query!("SELECT * FROM mod_beat_saber_versions WHERE mod_id = $1",sqlx::types::Uuid::from_bytes(*m.id.as_bytes())).fetch_all(db).await? .into_iter().map(|v|async move{sqlx::query_as!(models::dBeatSaberVersion,"SELECT * FROM beat_saber_versions WHERE id = $1",sqlx::types::Uuid::from_bytes(*v.beat_saber_version_id.as_bytes())).fetch_one(db).await}),).await.into_iter().map(|v|if let Ok(v)=v{Ok(v.ver)}else{Err(anyhow::anyhow!("Invalid version"))}).collect:: <Result<Vec<_> ,_> >() {
-                        Ok(vers) => {vers},
+                    let supported_versions = match join_all(
+                        sqlx::query!(
+                            "SELECT * FROM mod_beat_saber_versions WHERE mod_id = $1",
+                            sqlx::types::Uuid::from_bytes(*m.id.as_bytes())
+                        )
+                        .fetch_all(db)
+                        .await?
+                        .into_iter()
+                        .map(|v| async move {
+                            sqlx::query_as!(
+                                models::dBeatSaberVersion,
+                                "SELECT * FROM beat_saber_versions WHERE id = $1",
+                                sqlx::types::Uuid::from_bytes(*v.beat_saber_version_id.as_bytes())
+                            )
+                            .fetch_one(db)
+                            .await
+                        }),
+                    )
+                    .await
+                    .into_iter()
+                    .map(|v| {
+                        if let Ok(v) = v {
+                            Ok(v.ver)
+                        } else {
+                            Err(anyhow::anyhow!("Invalid version"))
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    {
+                        Ok(vers) => vers,
                         Err(e) => {
                             warn!("{}", e);
                             vec![]
-                        },
+                        }
                     };
 
                     Ok(MeiliMod {
@@ -182,22 +212,30 @@ impl MeiliMigration for CreateIndexMigration {
             .with_filterable_attributes(["category, supported_versions"])
             .with_searchable_attributes(["name", "description"])
             .with_sortable_attributes(["stats.downloads", "created_at", "updated_at"]);
-        match client.index(format!("{}mods",get_prefix())).set_settings(&settings).await {
-            Ok(_) => {},
+        match client
+            .index(format!("{}mods", get_prefix()))
+            .set_settings(&settings)
+            .await
+        {
+            Ok(_) => {}
             Err(e) => {
                 error!("{}", e);
 
                 return Err(anyhow::anyhow!("Failed to set settings"));
-            },
+            }
         };
 
-        match client.index(format!("{}mods",get_prefix())).add_documents(&meili_mods,None).await {
-            Ok(_) => {},
+        match client
+            .index(format!("{}mods", get_prefix()))
+            .add_documents(&meili_mods, None)
+            .await
+        {
+            Ok(_) => {}
             Err(e) => {
                 error!("{}", e);
 
                 return Err(anyhow::anyhow!("Failed to add documents"));
-            },
+            }
         };
         Ok(())
     }

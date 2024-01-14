@@ -3,7 +3,7 @@ use forge_lib::structs::v1::{unpack_v1_forgemod, ForgeModTypes};
 use poem::{handler, http::StatusCode, web::Path, IntoResponse, Response};
 use serde::Deserialize;
 use sqlx::PgPool;
-use tracing::{warn, error};
+use tracing::{error, warn};
 
 use crate::{models, DB_POOL};
 

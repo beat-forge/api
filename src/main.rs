@@ -93,12 +93,19 @@ lazy_static::lazy_static! {
         }
 
         #[allow(clippy::panic)]
-        Arc::new(Key(match match std::fs::read("./data/secret.key"){Ok(key)=>key,Err(e)=>{error!("{}",e);panic!("Failed to read secret key")},}.try_into() {
-            Ok(key) => key,
-            Err(_) => {
-                error!("Secret key is not 1024 bytes long, or is corrupt");
+        Arc::new(Key(match std::fs::read("./data/secret.key") {
+            Ok(key) => {
+                match key.try_into() {
+                    Ok(key) => key,
+                    Err(_) => {
+                        panic!("Failed to read secret key")
+                    },
+                }
+            }
+            Err(e) => {
+                error!("{}", e);
                 panic!("Failed to read secret key")
-            },
+            }
         }))
     };
 }

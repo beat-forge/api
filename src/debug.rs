@@ -4,11 +4,12 @@ use forge_lib::structs::{
 };
 use rand::{distributions::Alphanumeric, Rng};
 use semver::{Version, VersionReq};
-use tracing::{info, error};
+use tracing::{error, info};
 
 use crate::{
     mods::_upload_mod,
-    DB_POOL, MIGRATOR, search::{get_prefix, MeiliMigrator}, MEILI_CONN,
+    search::{get_prefix, MeiliMigrator},
+    DB_POOL, MEILI_CONN, MIGRATOR,
 };
 
 pub async fn handel_debug_flags() -> anyhow::Result<()> {
@@ -16,20 +17,26 @@ pub async fn handel_debug_flags() -> anyhow::Result<()> {
         .get()
         .ok_or(anyhow::anyhow!("Failed to get DB pool"))?;
 
-    let is_fresh = !sqlx::query!(
-        "SELECT * FROM _sqlx_migrations"
-    ).fetch_all(db).await.is_ok_and(|migrations| !migrations.is_empty());
+    let is_fresh = !sqlx::query!("SELECT * FROM _sqlx_migrations")
+        .fetch_all(db)
+        .await
+        .is_ok_and(|migrations| !migrations.is_empty());
 
     if !is_fresh {
         // check to see if reset flag is set.
         if let Ok(reset) = std::env::var("BF_DEBUG_FULL_RESET") {
             if reset == "true" {
                 error!("Resetting database");
-                sqlx::query!("DROP SCHEMA public CASCADE").execute(db).await?;
+                sqlx::query!("DROP SCHEMA public CASCADE")
+                    .execute(db)
+                    .await?;
                 sqlx::query!("CREATE SCHEMA public").execute(db).await?;
                 MIGRATOR.run(db).await?;
 
-                let meili_index = MEILI_CONN.get().ok_or(anyhow::anyhow!("Failed to get MeiliSearch client"))?.index(format!("{}mods",get_prefix()));
+                let meili_index = MEILI_CONN
+                    .get()
+                    .ok_or(anyhow::anyhow!("Failed to get MeiliSearch client"))?
+                    .index(format!("{}mods", get_prefix()));
                 meili_index.delete().await?;
 
                 MeiliMigrator::new().run(db).await?;
@@ -82,18 +89,24 @@ pub async fn handel_debug_flags() -> anyhow::Result<()> {
 pub async fn generate_user() -> anyhow::Result<()> {
     let mut rng = rand::thread_rng();
 
-    let username: String = rand::thread_rng().sample_iter(&Alphanumeric)
-    .take(16)
-    .map(char::from)
-    .collect();
-    let email: String = rand::thread_rng().sample_iter(&Alphanumeric)
-    .take(16)
-    .map(char::from)
-    .collect::<String>() + "@example.com";
-    let bio = Some(rand::thread_rng().sample_iter(&Alphanumeric)
-    .take(16)
-    .map(char::from)
-    .collect::<String>());
+    let username: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(16)
+        .map(char::from)
+        .collect();
+    let email: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(16)
+        .map(char::from)
+        .collect::<String>()
+        + "@example.com";
+    let bio = Some(
+        rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(16)
+            .map(char::from)
+            .collect::<String>(),
+    );
     let avatar = Some("https://http.cat/501".to_string());
     let permissions = 7;
     let github_id = rng.gen::<u32>() as i32;
@@ -152,7 +165,11 @@ async fn random_mod(slug: Option<String>) -> anyhow::Result<ForgeModV1> {
                     .map(char::from)
                     .collect(),
             ),
-            Version::new(rand::thread_rng().gen(), rand::thread_rng().gen(), rand::thread_rng().gen()),
+            Version::new(
+                rand::thread_rng().gen(),
+                rand::thread_rng().gen(),
+                rand::thread_rng().gen(),
+            ),
             VersionReq::parse(">=1.29.0")?,
         )
         .build(),
