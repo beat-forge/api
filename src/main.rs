@@ -1,4 +1,4 @@
-#![deny(clippy::unwrap_used, clippy::print_stdout)]
+#![deny(clippy::unwrap_used, clippy::print_stdout, clippy::create_dir)]
 
 use std::{path::Path, sync::Arc};
 
