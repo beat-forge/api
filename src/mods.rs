@@ -509,7 +509,7 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         // .id;
         let version = match sqlx::query!("INSERT INTO versions (mod_id, version, stats, artifact_hash, download_url) VALUES ($1, $2, $3, $4, $5) RETURNING id",
             db_mod,manifest.version.clone().to_string(),
-            version_stats, "", format!("{}/cdn/{}@{}",
+            version_stats, "", format!("{}/cdn/{}/{}",
                 match std::env::var("BF_PUBLIC_URL") {
                     Ok(url) => url,
                     Err(e) => {
@@ -834,25 +834,38 @@ pub async fn _upload_mod(auth: &str, body: Vec<u8>) -> Response {
         // .await
         // .unwrap()
         // .id;
-        let version = match sqlx::query!("INSERT INTO versions (mod_id, version, stats, artifact_hash, download_url) VALUES ($1, $2, $3, $4, $5) RETURNING id",db_mod,manifest.version.clone().to_string(),version_stats,"",format!("{}/cdn/{}@{}",match std::env::var("BF_PUBLIC_URL") {
-            Ok(url) => url,
-            Err(e) => {
-                warn!("{}", e);
+        let cdn_url = format!(
+            "{}/cdn/{}/{}",
+            match std::env::var("BF_PUBLIC_URL") {
+                Ok(url) => url,
+                Err(e) => {
+                    error!("{}",e);
 
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body("Internal Server Error");
-            }
-        },forgemod.manifest._id,manifest.version.clone().to_string())).fetch_one(&mut*trans).await {
-            Ok(record) => {record},
-            Err(e) => {
-                warn!("{}", e);
+                    return Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body("Internal Server Error");
+                    }
+                },
+            forgemod.manifest._id,
+            manifest.version.clone()
+        );
 
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body("Internal Server Error");
-            },
-        }.id;
+        let version = match sqlx::query!("INSERT INTO versions (mod_id, version, stats, artifact_hash, download_url) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+            db_mod,
+            manifest.version.clone().to_string(),
+            version_stats,
+            "",
+            cdn_url,
+        ).fetch_one(&mut*trans).await {
+                Ok(record) => {record},
+                Err(e) => {
+                    warn!("{}", e);
+
+                    return Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body("Internal Server Error");
+                },
+            }.id;
 
         for v in &vers {
             // let _ = entity::version_beat_saber_versions::ActiveModel {

@@ -117,8 +117,6 @@ async fn cdn_handler(
 // #[get("/cdn/{slug}@{version}/{type}")]
 #[handler]
 pub async fn cdn_get(
-    // db: web::Data<Database>,
-    // path: web::Path<(String, String, CdnType)>,
     Path((slug, version, dl_type)): Path<(String, String, CdnType)>,
 ) -> impl IntoResponse {
     let db = match DB_POOL.get() {

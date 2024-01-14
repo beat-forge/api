@@ -8,8 +8,8 @@ use async_graphql::{
 };
 use async_graphql_poem::GraphQL;
 use poem::{
-    get, handler, http::StatusCode, listener::TcpListener, post, EndpointExt, IntoResponse,
-    Response, Route,
+    get, handler, http::StatusCode, listener::TcpListener, middleware::CorsEndpoint, post,
+    EndpointExt, IntoResponse, Response, Route,
 };
 use rand::Rng;
 use search::MeiliMigrator;
@@ -36,15 +36,6 @@ mod debug;
 
 use crate::schema::Query;
 
-/// GraphiQL playground UI
-// async fn graphiql_route() -> Result<HttpResponse, Error> {
-//     juniper_actix::graphiql_handler("/graphql", None).await
-// }
-
-// async fn playground_route() -> Result<HttpResponse, Error> {
-//     juniper_actix::playground_handler("/graphql", None).await
-// }
-
 #[handler]
 async fn graphiql_route() -> Response {
     // Ok(HttpResponse::Ok()
@@ -61,15 +52,6 @@ async fn playground_route() -> Response {
         .content_type("text/html; charset=utf-8")
         .body(playground_source(GraphQLPlaygroundConfig::new("/graphql")))
 }
-
-// async fn graphql_route(
-//     req: actix_web::HttpRequest,
-//     payload: actix_web::web::Payload,
-//     data: web::Data<Schema>,
-//     db: web::Data<Database>,
-// ) -> Result<HttpResponse, Error> {
-//     juniper_actix::graphql_handler(&data, &db, req, payload).await
-// }
 
 #[derive(Clone, Copy)]
 pub struct Key([u8; 1024]);
@@ -195,6 +177,18 @@ async fn index() -> impl IntoResponse {
         .into_response()
 }
 
+#[handler]
+fn options() -> impl IntoResponse {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        .header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, Authorization, Access-Control-Allow-Origin",
+        )
+        .body("")
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
@@ -267,17 +261,20 @@ async fn main() -> anyhow::Result<()> {
     let app = Route::new()
         .at(
             "/graphql",
-            get(GraphQL::new(schema.clone())).post(GraphQL::new(schema)),
+            get(GraphQL::new(schema.clone()))
+                .post(GraphQL::new(schema))
+                .options(options),
         )
         .at("/graphiql", get(graphiql_route))
         .at("/playground", get(playground_route))
-        .at("/cdn/:slug@:version/:type", get(cdn::cdn_get))
-        .at("/cdn/:slug@:version", get(cdn::cdn_get_typeless))
+        .at("/cdn/:slug/:version/:type", get(cdn::cdn_get))
+        .at("/cdn/:slug/:version", get(cdn::cdn_get_typeless))
         .at("/mods", post(mods::upload_mod))
         .at("/auth/github", post(users::user_auth))
         .at("/me", get(users::get_me))
         .at("/", get(index))
-        .with(poem::middleware::Tracing);
+        .with(poem::middleware::Tracing)
+        .with(poem::middleware::SetHeader::new().appending("Access-Control-Allow-Origin", "*"));
 
     info!("starting HTTP server on port 8080");
     info!("GraphiQL playground: http://localhost:8080/graphiql");
