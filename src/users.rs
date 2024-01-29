@@ -9,7 +9,7 @@ use poem::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
@@ -269,6 +269,7 @@ pub async fn user_auth(
         Ok(user) => user,
         Err(e) => {
             warn!("{}", e);
+            info!("Got the following from GitHub: {}", github_user);
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .body("Bad response from GitHub. Please try again later.");
