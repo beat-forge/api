@@ -30,7 +30,7 @@ services:
     ports:
       - '8080:8080'
     volumes:
-      - 'beatforge-api-data:/app/data/'
+      - 'beatforge-api-data:/usr/src/app/data/'
       
 volumes:
   db-data: null
